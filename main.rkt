@@ -4,6 +4,7 @@
 ;; -- Requires --
 
 (require "arg-parser.rkt")
+(require "log.rkt")
 
 ;; -- Types --
 
@@ -13,7 +14,11 @@
 
 (define (main args-list)
   (let ([args (parse-arguments args-list)])
-    (validate-arguments args)))
+    (main-log "Launched with arguments \"~A\"" (string-join args-list " "))
+    (validate-arguments args)
+    (main-log "Starting server...")
+    (wait-for-break)
+    (main-log "Received break, terminating server...")))
 
 ;; -- Private Procedures --
 
@@ -48,6 +53,15 @@
     (when (not (and (exact-positive-integer? port)
                     (<= 1 port 65535)))
       (raise-user-error (format "Invalid port: ~A" port)))))
+
+;; Blocks until receiving a break.
+(define (wait-for-break)
+  (with-handlers ([exn:break? void])
+    (let ([sem (make-semaphore)])
+      (semaphore-wait sem))))
+
+;; Logs an event to the "Main" category.
+(define main-log (create-local-log "Main"))
 
 ;; -- Main Module --
 
