@@ -5,6 +5,7 @@
 
 (require "arg-parser.rkt")
 (require "log.rkt")
+(require "server.rkt")
 
 ;; -- Types --
 
@@ -17,8 +18,13 @@
     (main-log "Launched with arguments \"~A\"" (string-join args-list " "))
     (validate-arguments args)
     (main-log "Starting server...")
-    (wait-for-break)
-    (main-log "Received break, terminating server...")))
+    (let ([server (server-start (arguments-working-dir args)
+                                (arguments-hostname args)
+                                (arguments-port args))])
+      (wait-for-break)
+      (main-log "Received break, terminating server...")
+      (server-stop server)
+      (main-log "Server terminated."))))
 
 ;; -- Private Procedures --
 
@@ -42,10 +48,6 @@
       (raise-user-error "Working directory not specified"))
     (when (not (directory-exists? working-dir))
       (raise-user-error (format "Working directory does not exist: ~A" working-dir))))
-  ;; Hostname
-  (let ([hostname (arguments-hostname args)])
-    (when (not hostname)
-      (raise-user-error "Host name not specified")))
   ;; Port
   (let ([port (arguments-port args)])
     (when (not port)

@@ -24,7 +24,7 @@
                        (padded-number-string (date-hour date) 2)
                        (padded-number-string (date-minute date) 2)
                        (padded-number-string (date-second date) 2)
-                       milliseconds
+                       (padded-number-string milliseconds 3)
                        event))))
 
 ;; Returns a lambda for logging events with the specified category.
