@@ -1,7 +1,13 @@
+;;
+;; server.rkt
+;; Chris Vig (chris@invictus.so)
+;;
+
 #lang racket
 
 ;; -- Requires --
 
+(require "client.rkt")
 (require "listener.rkt")
 
 ;; -- Provides --
@@ -26,13 +32,15 @@
 ;; -- Public Procedures --
 
 (define (server-start working-dir hostname port)
-  (let ([listener (listener-start hostname
-                                  port
-                                  #t
-                                  4
-                                  (λ (input-port output-port)
-                                    (close-input-port input-port)
-                                    (close-output-port output-port)))])
+  (let ([listener
+         (listener-start
+          hostname
+          port
+          #t	; reusable
+          4	; allow max 4 clients waiting
+          (λ (input-port output-port)
+            (let ([client (client-start working-dir input-port output-port)])
+              (void))))])
     (opaque-server listener)))
 
 (define (server-stop server)
