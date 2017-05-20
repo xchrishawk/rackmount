@@ -16,18 +16,26 @@
 
 (provide
  (contract-out
+  ;; Starts a server instance.
   [server-start (-> server-config? opaque-server?)]
+  ;; Stops a server instance.
   [server-stop (-> opaque-server? any)]))
 
-(provide server-config)
+(provide
+ (contract-out
+  [struct server-config ([working-dir string?]
+                         [hostname (or/c string? false?)]
+                         [port port-number?]
+                         [reusable boolean?]
+                         [max-wait-count exact-nonnegative-integer?])]))
 
 ;; -- Types --
 
-(struct server-config (working-dir
-                       hostname
-                       port
-                       reusable
-                       max-wait-count)
+(struct server-config (working-dir		; Working directory for the server
+                       hostname			; Host name for the interface to bind to, or #f for any
+                       port			; Port number to bind to
+                       reusable			; Is the listener port reusable?
+                       max-wait-count)		; Max number of waiting clients
   #:transparent)
 
 (struct opaque-server (semaphore clients listener))
@@ -50,21 +58,32 @@
 (define (server-stop server)
   ;; Stop the listener thread
   (listener-stop (opaque-server-listener server))
-  ;; Stop the client threads
-  (with-semaphore (opaque-server-semaphore server)
-    (let ([clients (opaque-server-clients server)])
-      (when (not (set-empty? clients))
-        (server-log "Warning: Terminating ~A active clients." (set-count clients))
-        (for ([client (in-set clients)])
-          (client-stop client)))))
+  ;; Create a local copy of the clients set in case it gets mutated while we're iterating through it
+  (let ([clients (with-semaphore (opaque-server-semaphore server)
+                   (set-copy (opaque-server-clients server)))])
+    ;; Terminate any clients which are left
+    (when (not (set-empty? clients))
+      (server-log "Warning: Terminating ~A active clients." (set-count clients))
+      (for ([client (in-set clients)])
+        (client-stop client))))
   ;; Log shutdown
-  (server-log "Server stopped."))
+  (server-log "Server terminated normally."))
 
 ;; -- Private Procedures --
 
 (define (client-connected config semaphore clients input-port output-port)
-  (with-semaphore semaphore
-    (let ([client (client-start (server-config-working-dir config) input-port output-port)])
-      (set-add! clients client))))
+  ;; We have to use a delayed value for the "client" token in the shutdown closure
+  (let-values ([(get-client set-client) (delayed)])
+    (let ([client (client-start (server-config-working-dir config)
+                                input-port
+                                output-port
+                                (λ ()
+                                  (with-semaphore semaphore
+                                    (set-remove! clients (get-client)))))])
+      ;; Add the client to the client set
+      (with-semaphore semaphore
+        (set-add! clients client))
+      ;; Set the delayed value so the shutdown closure works
+      (set-client client))))
 
 (define server-log (create-local-log "Server"))

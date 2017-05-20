@@ -15,17 +15,14 @@
 (provide
  (contract-out
   ;; Starts a listener.
-  [listener-start
-   (-> (or/c string? false?)			; hostname
-       (integer-in 1 65535)			; port
-       boolean?					; reusable
-       exact-nonnegative-integer?		; max-wait
-       (-> input-port? output-port? any)	; client-connected
-       opaque-listener?)]
+  [listener-start (-> (or/c string? false?)
+                      port-number?
+                      boolean?
+                      exact-nonnegative-integer?
+                      (-> input-port? output-port? any)
+                      opaque-listener?)]
   ;; Stops a listener.
-  [listener-stop
-   (-> opaque-listener?				; listener
-       void?)]))
+  [listener-stop (-> opaque-listener? void?)]))
 
 ;; -- Types --
 
@@ -43,7 +40,7 @@
           ;; Start the listener
           (let ([listener (tcp-listen port max-wait reusable hostname)])
             ;; Log startup
-            (listener-log "Launched - listening on ~A port ~A..."
+            (listener-log "Listener created on ~A port ~A. Listener thread starting..."
                           (or hostname "any interface")
                           port)
             ;; Main loop
@@ -64,7 +61,7 @@
                   [else (error "Unknown event!")])))
             ;; Shutdown and log
             (tcp-close listener)
-            (listener-log "Terminated normally.")))])
+            (listener-log "Listener thread terminated normally.")))])
     (opaque-listener listener-thread)))
 
 (define (listener-stop listener)

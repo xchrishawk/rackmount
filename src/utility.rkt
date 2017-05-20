@@ -4,6 +4,9 @@
 
 (provide thread-start)
 (provide with-semaphore)
+(provide
+ (contract-out
+  [delayed (-> (values (-> any) (-> any/c any)))]))
 
 ;; -- Macros --
 
@@ -19,3 +22,31 @@
    (λ ()
      expr0
      expr ...)))
+
+;; -- Procedures --
+
+(define (delayed)
+  (let* (;; Unique object to act as a placeholder
+         [placeholder (new object%)]
+         ;; Semaphore to block getting value until it's set
+         [semaphore (make-semaphore)]
+         ;; The value
+         [value placeholder]
+         ;; Procedure to get value. Will block until it is set.
+         [get-value
+          (λ ()
+            (call-with-semaphore semaphore (λ () value)))]
+         ;; Procedure to set value. Can only be called once. Returns the value set.
+         [set-value
+          (λ (new-value)
+            (when (not (eq? value placeholder))
+              (error "Delayed value was already set!"))
+            (set! value new-value)
+            (semaphore-post semaphore)
+            new-value)])
+    ;; Return the get and set procedures.
+    (values get-value set-value)))
+
+;; -- Predicates --
+
+(define (port-number?) (integer-in 1 65535))
