@@ -9,39 +9,62 @@
 
 (require "client.rkt")
 (require "listener.rkt")
+(require "log.rkt")
+(require "utility.rkt")
 
 ;; -- Provides --
 
 (provide
  (contract-out
-  ;; Launches a server instance.
-  [server-start
-   (-> string?			; working-dir
-       (or/c string? false?)	; hostname
-       (integer-in 1 65535)	; port
-       opaque-server?)]
-  ;; Terminates a server instance.
-  [server-stop
-   (-> opaque-server?		; server
-       void?)]))
+  [server-start (-> server-config? opaque-server?)]
+  [server-stop (-> opaque-server? any)]))
+
+(provide server-config)
 
 ;; -- Types --
 
-(struct opaque-server (listener))
+(struct server-config (working-dir
+                       hostname
+                       port
+                       reusable
+                       max-wait-count)
+  #:transparent)
+
+(struct opaque-server (semaphore clients listener))
 
 ;; -- Public Procedures --
 
-(define (server-start working-dir hostname port)
-  (let ([listener
-         (listener-start
-          hostname
-          port
-          #t	; reusable
-          4	; allow max 4 clients waiting
-          (λ (input-port output-port)
-            (let ([client (client-start working-dir input-port output-port)])
-              (void))))])
-    (opaque-server listener)))
+(define (server-start config)
+  (server-log "Server starting...")
+  (let* ([semaphore (make-semaphore 1)]
+         [clients (mutable-set)]
+         [inner-client-connected (λ (input-port output-port)
+                                   (client-connected config semaphore clients input-port output-port))]
+         [listener (listener-start (server-config-hostname config)
+                                   (server-config-port config)
+                                   (server-config-reusable config)
+                                   (server-config-max-wait-count config)
+                                   inner-client-connected)])
+    (opaque-server semaphore clients listener)))
 
 (define (server-stop server)
-  (listener-stop (opaque-server-listener server)))
+  ;; Stop the listener thread
+  (listener-stop (opaque-server-listener server))
+  ;; Stop the client threads
+  (with-semaphore (opaque-server-semaphore server)
+    (let ([clients (opaque-server-clients server)])
+      (when (not (set-empty? clients))
+        (server-log "Warning: Terminating ~A active clients." (set-count clients))
+        (for ([client (in-set clients)])
+          (client-stop client)))))
+  ;; Log shutdown
+  (server-log "Server stopped."))
+
+;; -- Private Procedures --
+
+(define (client-connected config semaphore clients input-port output-port)
+  (with-semaphore semaphore
+    (let ([client (client-start (server-config-working-dir config) input-port output-port)])
+      (set-add! clients client))))
+
+(define server-log (create-local-log "Server"))

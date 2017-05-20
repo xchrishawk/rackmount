@@ -17,14 +17,15 @@
   (let ([args (parse-arguments args-list)])
     (main-log "Launched with arguments \"~A\"" (string-join args-list " "))
     (validate-arguments args)
-    (main-log "Starting server...")
-    (let ([server (server-start (arguments-working-dir args)
-                                (arguments-hostname args)
-                                (arguments-port args))])
+    (let* ([config (server-config (arguments-working-dir args)
+                                  (arguments-hostname args)
+                                  (arguments-port args)
+                                  #t
+                                  4)]
+           [server (server-start config)])
       (wait-for-break)
       (main-log "Received break, terminating server...")
-      (server-stop server)
-      (main-log "Server terminated."))))
+      (server-stop server))))
 
 ;; -- Private Procedures --
 
