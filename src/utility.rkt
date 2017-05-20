@@ -7,8 +7,8 @@
 (provide
  (contract-out
   [delayed (-> (values (-> any) (-> any/c any)))]
-  [port-number? (-> any/c boolean?)]
-  [string-empty? (-> string? boolean?)]))
+  [string-empty? (-> string? boolean?)]
+  [length-at-least (-> list? exact-nonnegative-integer? boolean?)]))
 
 ;; -- Macros --
 
@@ -51,8 +51,11 @@
 
 ;; -- Predicates --
 
-(define (port-number? x)
-  ((integer-in 1 65535) x))
-
 (define (string-empty? str)
   (equal? str ""))
+
+(define (length-at-least lst len)
+  (cond
+    [(zero? len) #t]
+    [(null? lst) #f]
+    [else (length-at-least (rest lst) (sub1 len))]))
