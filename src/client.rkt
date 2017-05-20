@@ -30,7 +30,7 @@
          (thread-start
           (client-log "Client connected. Client thread starting...")
           (let loop ([accumulated-request (string)])
-            ;; Wait for the next evenet
+            ;; Wait for the next event
             (let ([evt (sync (read-line-evt input-port 'any)
                              (thread-receive-evt))])
               (cond
@@ -38,9 +38,10 @@
                 [(string? evt)
                  (if (string-empty? evt)
                      ;; Blank line - this request is complete
-                     (begin
-                       (handle-request accumulated-request)
-                       (loop (string)))
+                     (let-values ([(response continue) (handle-request accumulated-request)])
+                       (display response output-port)
+                       (when continue
+                         (loop (string))))
                      ;; Non-blank line - continue accumulating
                      (loop (string-append accumulated-request "\n" evt)))]
                 ;; Client disconnected from their end
@@ -74,6 +75,6 @@
 ;; -- Private Procedures --
 
 (define (handle-request request)
-  (displayln (format "Full request: ~A" request)))
+  (values "HTTP/1.0 200 OK\n\n<html>hi</html>" #f))
 
 (define client-log (create-local-log "Client"))
