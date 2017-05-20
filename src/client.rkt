@@ -29,17 +29,23 @@
   (let ([client-thread
          (thread-start
           (client-log "Client connected. Client thread starting...")
-          (let loop ()
+          (let loop ([accumulated-request (string)])
             ;; Wait for the next evenet
-            (let ([evt (sync (read-line-evt input-port) (thread-receive-evt))])
+            (let ([evt (sync (read-line-evt input-port 'any)
+                             (thread-receive-evt))])
               (cond
                 ;; Received line from client
                 [(string? evt)
-                 (client-log "RX: ~A" evt)
-                 (loop)]
-                ;; Client disconnect
+                 (if (string-empty? evt)
+                     ;; Blank line - this request is complete
+                     (begin
+                       (handle-request accumulated-request)
+                       (loop (string)))
+                     ;; Non-blank line - continue accumulating
+                     (loop (string-append accumulated-request "\n" evt)))]
+                ;; Client disconnected from their end
                 [(equal? evt eof)
-                 (client-log "RX: <client disconnected>")
+                 (client-log "Client disconnected.")
                  (void)]
                 ;; Shutdown command
                 [(and (equal? evt (thread-receive-evt))
@@ -66,5 +72,8 @@
       (void))))
 
 ;; -- Private Procedures --
+
+(define (handle-request request)
+  (displayln (format "Full request: ~A" request)))
 
 (define client-log (create-local-log "Client"))

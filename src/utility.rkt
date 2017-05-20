@@ -6,7 +6,9 @@
 (provide with-semaphore)
 (provide
  (contract-out
-  [delayed (-> (values (-> any) (-> any/c any)))]))
+  [delayed (-> (values (-> any) (-> any/c any)))]
+  [port-number? (-> any/c boolean?)]
+  [string-empty? (-> string? boolean?)]))
 
 ;; -- Macros --
 
@@ -49,4 +51,8 @@
 
 ;; -- Predicates --
 
-(define (port-number?) (integer-in 1 65535))
+(define (port-number? x)
+  ((integer-in 1 65535) x))
+
+(define (string-empty? str)
+  (equal? str ""))
