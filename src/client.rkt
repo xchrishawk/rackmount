@@ -7,6 +7,7 @@
 
 ;; -- Requires --
 
+(require racket/date)
 (require "html.rkt")
 (require "log.rkt")
 (require "utility.rkt")
@@ -79,9 +80,10 @@
   (values
    (string-append "HTTP/1.0 200 OK\n\n"
                   (html
-                   (h1 "Echo Back")
+                   (h1 "Request")
                    (p "Your request was:")
-                   (p request)))
+                   (p
+                    (pre request))))
    #f))
 
 (define client-log (create-local-log "Client"))
