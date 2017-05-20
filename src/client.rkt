@@ -7,6 +7,7 @@
 
 ;; -- Requires --
 
+(require "html.rkt")
 (require "log.rkt")
 (require "utility.rkt")
 
@@ -75,6 +76,12 @@
 ;; -- Private Procedures --
 
 (define (handle-request request)
-  (values "HTTP/1.0 200 OK\n\n<html>hi</html>" #f))
+  (values
+   (string-append "HTTP/1.0 200 OK\n\n"
+                  (html
+                   (h1 "Echo Back")
+                   (p "Your request was:")
+                   (p request)))
+   #f))
 
 (define client-log (create-local-log "Client"))
