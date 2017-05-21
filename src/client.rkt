@@ -80,10 +80,15 @@
   (values
    (string-append "HTTP/1.0 200 OK\n\n"
                   (html
-                   (h1 "Request")
-                   (p "Your request was:")
-                   (p
-                    (pre request))))
+                   (head
+                    (title "Echo Service"))
+                   (body
+                    (h1 "Echo Service")
+                    (hr)
+                    (p "Your request was:")
+                    (p
+                     (pre request))
+                    (p (img #:src "https://www.iana.org/_img/2013.1/iana-logo-header.svg")))))
    #f))
 
 (define client-log (create-local-log "Client"))
