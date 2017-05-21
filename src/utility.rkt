@@ -1,3 +1,8 @@
+;;
+;; utility.rkt
+;; Chris Vig (chris@invictus.so)
+;;
+
 #lang racket
 
 ;; -- Provides --
