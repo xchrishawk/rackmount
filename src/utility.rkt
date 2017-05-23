@@ -12,6 +12,7 @@
 (provide
  (contract-out
   [delayed (-> (values (-> any) (-> any/c any)))]
+  [list-refs (->* (list?) #:rest (listof exact-nonnegative-integer?) list?)]
   [string-empty? (-> string? boolean?)]
   [length-at-least (-> list? exact-nonnegative-integer? boolean?)]))
 
@@ -53,6 +54,19 @@
             new-value)])
     ;; Return the get and set procedures.
     (values get-value set-value)))
+
+(define (list-refs lst . idxs)
+  (reverse
+   (let loop ([lst lst] [idxs idxs] [idx 0] [result null])
+     (cond
+       [(null? idxs)
+        result]
+       [(null? lst)
+        (error "Invalid index:" (first idxs))]
+       [(equal? idx (first idxs))
+        (loop (rest lst) (rest idxs) (add1 idx) (cons (first lst) result))]
+       [else
+        (loop (rest lst) idxs (add1 idx) result)]))))
 
 ;; -- Predicates --
 

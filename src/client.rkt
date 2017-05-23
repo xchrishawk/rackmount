@@ -9,6 +9,7 @@
 
 (require racket/date)
 (require "html.rkt")
+(require "http-request.rkt")
 (require "log.rkt")
 (require "utility.rkt")
 
@@ -76,19 +77,24 @@
 
 ;; -- Private Procedures --
 
-(define (handle-request request)
-  (values
-   (string-append "HTTP/1.0 200 OK\n\n"
-                  (html
-                   (head
-                    (title "Echo Service"))
-                   (body
-                    (h1 "Echo Service")
-                    (hr)
-                    (p "Your request was:")
-                    (p
-                     (pre request))
-                    (p (img #:src "https://www.iana.org/_img/2013.1/iana-logo-header.svg")))))
-   #f))
+(define (handle-request request-string)
+  (let ([request (parse-http-request request-string)])
+    (values
+     (string-append "HTTP/1.0 200 OK\n\n"
+                    (html
+                     (head
+                      (title "Echo Service"))
+                     (body
+                      (h1 "Echo Service")
+                      (hr)
+                      (ul
+                       (li (strong "Date") ": " (date->string (current-date) #t))
+                       (li (strong "Method") ": " (http-request-method request))
+                       (li (strong "URI") ": " (http-request-uri request))
+                       (li (strong "HTTP Major Version")
+                           (format ": ~A" (http-request-version-major request)))
+                       (li (strong "HTTP Minor Version")
+                           (format ": ~A" (http-request-version-minor request)))))))
+     #f)))
 
 (define client-log (create-local-log "Client"))
