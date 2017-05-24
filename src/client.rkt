@@ -8,8 +8,8 @@
 ;; -- Requires --
 
 (require racket/date)
-(require "html.rkt")
 (require "http-request.rkt")
+(require "hypertext.rkt")
 (require "log.rkt")
 (require "utility.rkt")
 
@@ -81,20 +81,29 @@
   (let ([request (parse-http-request request-string)])
     (values
      (string-append "HTTP/1.0 200 OK\n\n"
-                    (html
-                     (head
-                      (title "Echo Service"))
-                     (body
-                      (h1 "Echo Service")
-                      (hr)
-                      (ul
-                       (li (strong "Date") ": " (date->string (current-date) #t))
-                       (li (strong "Method") ": " (http-request-method request))
-                       (li (strong "URI") ": " (http-request-uri request))
-                       (li (strong "HTTP Major Version")
-                           (format ": ~A" (http-request-version-major request)))
-                       (li (strong "HTTP Minor Version")
-                           (format ": ~A" (http-request-version-minor request)))))))
+                    (hypertext
+                     (html
+                      (head
+                       (title "Echo Service"))
+                      (body
+                       (h1 "Echo Service")
+                       (hr)
+                       (h3 "Request Info")
+                       (ul
+                        (li (strong "Date") (text ": " (date->string (current-date) #t)))
+                        (li (strong "Method") (text ": " (http-request-method request)))
+                        (li (strong "URI") (text ": " (http-request-uri request)))
+                        (li (strong "HTTP Major Version")
+                            (text (format ": ~A" (http-request-version-major request))))
+                        (li (strong "HTTP Minor Version")
+                            (text (format ": ~A" (http-request-version-minor request)))))
+                       (h3 "Headers")
+                       (ul
+                        (for ([(key value) (in-hash (http-request-headers request))])
+                          (li (strong (text key))
+                              (text ": ")
+                              (text value))))))))
+
      #f)))
 
 (define client-log (create-local-log "Client"))

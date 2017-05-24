@@ -12,52 +12,87 @@
 
 ;; -- Provides --
 
-;(provide hypertext)
+(provide hypertext)
 
 ;; -- Macros --
 
+;;
+;; Macro for generating HTML code.
+;;
+;; Example invocation...
+;;
+;; (hypertext
+;;  (html
+;;   (head
+;;    (title "The Page Title"))
+;;   (body
+;;    (h1 "The Header")
+;;    (hr)
+;;    (p "The first paragraph")
+;;    (p (text (format "Text in function calls needs to be escaped with `text`")))
+;;    (when some-condition
+;;      (p "The optional paragraph"))
+;;    (for ([thing (in-list a-list)])
+;;      (p (text thing)))
+;;    (img #:src "http://www.example.com/example.png"))))
+;;
+
 (define-syntax (hypertext stx)
   (let* ([clauses (rest (syntax-e stx))]
-         [result `(begin ,@(for/list ([clause (in-list clauses)])
-                             (proc-clause clause)))])
-    (pretty-print result)
+         [result (quasiquote
+                  (parameterize ([current-output-port (open-output-string)])
+                    ,@(for/list ([clause (in-list clauses)])
+                        (proc-clause clause))
+                    (get-output-string (current-output-port))))])
     (datum->syntax stx result)))
+
+;; -- Private Procedures --
 
 ;; Processes an individual clause
 (define-for-syntax (proc-clause clause)
-  (let* ([unwrapped (syntax-e clause)]
-         [tag (syntax->datum (first unwrapped))])
+  (let* ([unwrapped (syntax-e clause)])
     ;; Verify the first element in the list is a symbol
     ;; This is to guard against special syntax forms like (let ((...)) ...)
-    (if (not (symbol? tag))
+    (if (not (identifier? (first unwrapped)))
         ;; Not a method call - return syntax intact
         clause
         ;; Method call - get the tag name and the subclauses
-        (let* ([tag-name (symbol->string tag)]
+        (let* ([tag (syntax->datum (first unwrapped))]
+               [tag-name (symbol->string tag)]
                [subclauses (rest unwrapped)])
-          ;; Is this an HTML tag?
-          (if (set-member? valid-html-tags tag-name)
-              ;; It is an HTML tag - get contents and attributes
-              (let-values ([(contents attributes) (get-contents-attributes subclauses)])
-                `(begin
-                   (display (format "<~A" ,tag-name))
-                   ;; Attributes
-                   ,@(for/list ([(key value) (in-hash attributes)])
-                       `(display (format " ~A=\"~A\"" ,key ,value)))
-                   (display ">")
-                   ;; Contents
-                   ,@(for/list ([content (in-list contents)])
-                       (if (list? (syntax-e content))
-                           (proc-clause content)
-                           `(display ,content)))
-                   (display (format "</~A>" ,tag-name))))
-              ;; It is not an HTML tag
-              `(,tag
-                ;; Recursively process subclauses, leaving intact anything that's not a subclause
+          (cond
+            ;; It is an HTML tag - get contents and attributes
+            [(set-member? valid-html-tags tag-name)
+             (let-values ([(contents attributes) (get-contents-attributes subclauses)])
+               `(begin
+                  (display (format "<~A" ,tag-name))
+                  ;; Attributes
+                  ,@(for/list ([(key value) (in-hash attributes)])
+                      `(display (format " ~A=\"~A\"" ,key ,value)))
+                  ;; Do we have any content?
+                  ,@(if (null? contents)
+                        ;; No content - immediately close tag
+                        `((display "/>"))
+                        ;; Have content - display it and then close tag
+                        `((display ">")
+                          ,@(for/list ([content (in-list contents)])
+                              (if (list? (syntax-e content))
+                                  (proc-clause content)
+                                  `(display ,content)))
+                          (display (format "</~A>" ,tag-name))))))]
+            ;; It is literal text - display it
+            [(equal? "text" tag-name)
+             `(begin
                 ,@(for/list ([subclause (in-list subclauses)])
-                    (if (list? (syntax-e subclause))
-                        (proc-clause subclause)
-                        subclause))))))))
+                    `(display ,subclause)))]
+            ;; It is not an HTML tag or literal text
+            [else
+             `(,tag
+               ;; Recursively process subclauses, leaving intact anything that's not a subclause
+               ,@(for/list ([subclause (in-list subclauses)])
+                   (if (list? (syntax-e subclause))
+                       (proc-clause subclause)
+                       subclause)))])))))
 
 ;; Splits a tag into attributes and contents
 (define-for-syntax (get-contents-attributes unwrapped)
