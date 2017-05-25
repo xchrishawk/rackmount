@@ -14,7 +14,8 @@
   [delayed (-> (values (-> any) (-> any/c any)))]
   [list-refs (->* (list?) #:rest (listof exact-nonnegative-integer?) list?)]
   [string-empty? (-> string? boolean?)]
-  [length-at-least (-> list? exact-nonnegative-integer? boolean?)]))
+  [length-at-least? (-> list? exact-nonnegative-integer? boolean?)]
+  [make-syntax (->* (syntax? string?) #:rest (listof any/c) syntax?)]))
 
 ;; -- Macros --
 
@@ -68,13 +69,14 @@
        [else
         (loop (rest lst) idxs (add1 idx) result)]))))
 
-;; -- Predicates --
+(define (make-syntax stx fmt . v)
+  (datum->syntax stx (string->symbol (apply format fmt v))))
 
 (define (string-empty? str)
   (equal? str ""))
 
-(define (length-at-least lst len)
+(define (length-at-least? lst len)
   (cond
     [(zero? len) #t]
     [(null? lst) #f]
-    [else (length-at-least (rest lst) (sub1 len))]))
+    [else (length-at-least? (rest lst) (sub1 len))]))

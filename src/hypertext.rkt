@@ -105,7 +105,7 @@
                         (if (keyword? this-datum)
                             ;; is a keyword
                             (begin
-                              (when (not (length-at-least remaining 2))
+                              (when (not (length-at-least? remaining 2))
                                 (error (format "Keyword missing argument: ~A" this-datum)))
                               (loop (drop remaining 2)
                                     unused
