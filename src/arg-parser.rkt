@@ -36,12 +36,14 @@
                   ,@(map
                      (λ (clause)
                        ;; Helper function for "var" clauses
-                       (define (var-clause predicate fld-id proc)
+                       (define (var-clause predicate fld-id [proc #f])
                          `[,predicate
                            (if (not (null? (rest ,args)))
                                (loop
                                 (drop ,args 2)
-                                (struct-copy ,struct-id ,result [,fld-id (,proc (second ,args))]))
+                                (struct-copy ,struct-id ,result [,fld-id (if ,proc
+                                                                             (,proc (second ,args))
+                                                                             (second ,args))]))
                                (raise-user-error (format "Missing argument for ~A" arg)))])
                        ;; Helper function for "flag" clauses
                        (define (flag-clause predicate fld-id)
@@ -53,10 +55,10 @@
                        (match clause
                          ;; Unprocessed string, allow multiple argument names
                          [(list 'var (list arg-name ...) fld-id)
-                          (var-clause `(member arg (list ,@arg-name)) fld-id identity)]
+                          (var-clause `(member arg (list ,@arg-name)) fld-id)]
                          ;; Unprocessed string, single argument name only
                          [(list 'var arg-name fld-id)
-                          (var-clause `(equal? arg ,arg-name) fld-id identity)]
+                          (var-clause `(equal? arg ,arg-name) fld-id)]
                          ;; Processed/converted value, allow multiple argument names
                          [(list 'var (list arg-name ...) fld-id proc)
                           (var-clause `(member arg (list ,@arg-name)) fld-id proc)]
