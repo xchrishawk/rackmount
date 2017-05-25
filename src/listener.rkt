@@ -22,7 +22,9 @@
                       (-> input-port? output-port? any)
                       opaque-listener?)]
   ;; Stops a listener.
-  [listener-stop (-> opaque-listener? void?)]))
+  [listener-stop (-> opaque-listener? void?)]
+  ;; Returns a syncable event firing when the listener thread terminates.
+  [listener-terminated-evt (-> opaque-listener? evt?)]))
 
 ;; -- Types --
 
@@ -30,11 +32,7 @@
 
 ;; -- Public Procedures --
 
-(define (listener-start hostname
-                        port
-                        reusable
-                        max-wait
-                        client-connected)
+(define (listener-start hostname port reusable max-wait client-connected)
   (let ([listener-thread
          (thread-start
           ;; Start the listener
@@ -66,11 +64,31 @@
 
 (define (listener-stop listener)
   (let ([listener-thread (opaque-listener-thread listener)])
-    (thread-send listener-thread 'shutdown)
-    (sync listener-thread)
+    (when (thread-running? listener-thread)
+      (thread-send listener-thread 'shutdown)
+      (sync listener-thread))
     (void)))
+
+(define (listener-terminated-evt listener)
+  (opaque-listener-thread listener))
 
 ;; -- Private Procedures --
 
-;; Logging procedure for listener threads.
-(define listener-log (create-local-log "Listener"))
+;; Logs an event to the "listener" category.
+(define listener-log
+  (create-local-log "Listener"))
+
+;; -- Tests --
+
+(module+ test
+  (require rackunit)
+  ;; Verify that the terminated event operates as expected.
+  (test-case "Terminated Event"
+    (let* ([listener (listener-start "localhost" 8888 #t 4 void)]
+           [received-event #f]
+           [check-thread (thread-start
+                          (sync (listener-terminated-evt listener))
+                          (set! received-event #t))])
+      (listener-stop listener)
+      (sync check-thread)
+      (check-true received-event))))

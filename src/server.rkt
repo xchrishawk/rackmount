@@ -19,10 +19,13 @@
   ;; Starts a server instance.
   [server-start (-> server-config? opaque-server?)]
   ;; Stops a server instance.
-  [server-stop (-> opaque-server? any)]))
+  [server-stop (-> opaque-server? any)]
+  ;; Returns a syncable event firing when the listener thread terminates for any reason.
+  [server-listener-terminated-evt (-> opaque-server? evt?)]))
 
 (provide
  (contract-out
+  ;; Struct representing the configuration used to start a server.
   [struct server-config ([working-dir string?]
                          [hostname (or/c string? false?)]
                          [port port-number?]
@@ -69,8 +72,12 @@
   ;; Log shutdown
   (server-log "Server terminated normally."))
 
+(define (server-listener-terminated-evt server)
+  (listener-terminated-evt (opaque-server-listener server)))
+
 ;; -- Private Procedures --
 
+;; Handles client connection.
 (define (client-connected config semaphore clients input-port output-port)
   ;; We have to use a delayed value for the "client" token in the shutdown closure
   (let-values ([(get-client set-client) (delayed)])
@@ -86,4 +93,6 @@
       ;; Set the delayed value so the shutdown closure works
       (set-client client))))
 
-(define server-log (create-local-log "Server"))
+;; Logs an event to the "Server" category.
+(define server-log
+  (create-local-log "Server"))

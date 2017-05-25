@@ -23,8 +23,9 @@
                                   #t
                                   4)]
            [server (server-start config)])
-      (wait-for-break)
-      (main-log "Received break, terminating server...")
+      (with-handlers ([exn:break? (λ (ex) (main-log "Received break, terminating server..."))])
+        (sync/enable-break (server-listener-terminated-evt server))
+        (main-log "Listener thread terminated unexpectedly! Terminating server..."))
       (server-stop server))))
 
 ;; -- Private Procedures --
@@ -57,14 +58,9 @@
                     (<= 1 port 65535)))
       (raise-user-error (format "Invalid port: ~A" port)))))
 
-;; Blocks until receiving a break.
-(define (wait-for-break)
-  (with-handlers ([exn:break? void])
-    (let ([sem (make-semaphore)])
-      (semaphore-wait sem))))
-
 ;; Logs an event to the "Main" category.
-(define main-log (create-local-log "Main"))
+(define main-log
+  (create-local-log "Main"))
 
 ;; -- Main Module --
 
