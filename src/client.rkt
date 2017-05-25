@@ -8,6 +8,7 @@
 ;; -- Requires --
 
 (require racket/date)
+(require "exception.rkt")
 (require "http-request.rkt")
 (require "hypertext.rkt")
 (require "log.rkt")
@@ -41,7 +42,7 @@
                 [(string? evt)
                  (if (string-empty? evt)
                      ;; Blank line - this request is complete
-                     (let-values ([(response continue) (handle-request accumulated-request)])
+                     (let-values ([(response continue) (handle-request-string accumulated-request)])
                        (display response output-port)
                        (when continue
                          (loop (string))))
@@ -77,33 +78,38 @@
 
 ;; -- Private Procedures --
 
-(define (handle-request request-string)
-  (let ([request (parse-http-request request-string)])
-    (values
-     (string-append "HTTP/1.0 200 OK\n\n"
-                    (hypertext
-                     (html
-                      (head
-                       (title "Echo Service"))
-                      (body
-                       (h1 "Echo Service")
-                       (hr)
-                       (h3 "Request Info")
-                       (ul
-                        (li (strong "Date") (text ": " (date->string (current-date) #t)))
-                        (li (strong "Method") (text ": " (http-request-method request)))
-                        (li (strong "URI") (text ": " (http-request-uri request)))
-                        (li (strong "HTTP Major Version")
-                            (text (format ": ~A" (http-request-version-major request))))
-                        (li (strong "HTTP Minor Version")
-                            (text (format ": ~A" (http-request-version-minor request)))))
-                       (h3 "Headers")
-                       (ul
-                        (for ([(key value) (in-hash (http-request-headers request))])
-                          (li (strong (text key))
-                              (text ": ")
-                              (text value))))))))
+(define (handle-request-string request-string)
+  (let ([request (with-handlers ([exn:fail:rackmount:bad-http-request? (λ (ex) #f)])
+                   (parse-http-request request-string))])
+    (if request
+        (handle-request request)
+        (values "HTTP/1.0 400 Bad Request\n" #f))))
 
-     #f)))
+(define (handle-request request)
+  (values
+   (string-append "HTTP/1.0 200 OK\n\n"
+                  (hypertext
+                   (html
+                    (head
+                     (title "Echo Service"))
+                    (body
+                     (h1 "Echo Service")
+                     (hr)
+                     (h3 "Request Info")
+                     (ul
+                      (li (strong "Date") (text ": " (date->string (current-date) #t)))
+                      (li (strong "Method") (text ": " (http-request-method request)))
+                      (li (strong "URI") (text ": " (http-request-uri request)))
+                      (li (strong "HTTP Major Version")
+                          (text (format ": ~A" (http-request-version-major request))))
+                      (li (strong "HTTP Minor Version")
+                          (text (format ": ~A" (http-request-version-minor request)))))
+                     (h3 "Headers")
+                     (ul
+                      (for ([(key value) (in-hash (http-request-headers request))])
+                        (li (strong (text key))
+                            (text ": ")
+                            (text value))))))))
+   #f))
 
 (define client-log (create-local-log "Client"))

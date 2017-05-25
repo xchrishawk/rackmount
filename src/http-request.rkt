@@ -7,6 +7,7 @@
 
 ;; -- Requires --
 
+(require "exception.rkt")
 (require "utility.rkt")
 
 ;; -- Provides --
@@ -67,9 +68,10 @@
   (let ([result (proc request)])
     (if result
         (apply values result)
-        (error (format "Failed to read token! Expected ~A, got \"~A\""
-                       token-type
-                       (read-line request 'any))))))
+        (raise-rackmount-bad-http-request-error
+         "Failed to read token - expected ~A, got \"~A\""
+         token-type
+         (read-line request 'any)))))
 
 (define (reader regex . indices)
   (λ (request)

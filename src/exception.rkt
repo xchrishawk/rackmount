@@ -38,4 +38,4 @@
 ;; -- Definitions --
 
 (define-exn rackmount)
-(define-exn rackmount:invalid-request)
+(define-exn rackmount:bad-http-request)
