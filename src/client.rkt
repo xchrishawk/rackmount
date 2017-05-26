@@ -2,6 +2,9 @@
 ;; client.rkt
 ;; Chris Vig (chris@invictus.so)
 ;;
+;; This file defines the client thread, which is the primary thread responsible
+;; for handling basic communication with a client after it has connected.
+;;
 
 #lang racket
 
@@ -10,6 +13,7 @@
 (require racket/date)
 (require "exception.rkt")
 (require "http-request.rkt")
+(require "http-response.rkt")
 (require "hypertext.rkt")
 (require "log.rkt")
 (require "utility.rkt")
@@ -42,8 +46,10 @@
                 [(string? evt)
                  (if (string-empty? evt)
                      ;; Blank line - this request is complete
-                     (let-values ([(response continue) (handle-request-string accumulated-request)])
-                       (display response output-port)
+                     ;; Get the HTTP response to send, and return it to the client
+                     (let*-values ([(response continue) (handle-request-string accumulated-request)]
+                                   [(response-bytes) (http-response->bytes response)])
+                       (write-bytes response-bytes output-port)
                        (when continue
                          (loop (string))))
                      ;; Non-blank line - continue accumulating
@@ -78,38 +84,43 @@
 
 ;; -- Private Procedures --
 
-(define (handle-request-string request-string)
+;; Handles a request string.
+(define/contract (handle-request-string request-string)
+  (-> string? (values http-response? boolean?))
   (let ([request (with-handlers ([exn:fail:rackmount:bad-http-request? (λ (ex) #f)])
                    (parse-http-request request-string))])
     (if request
         (handle-request request)
-        (values "HTTP/1.0 400 Bad Request\n" #f))))
+        (values (http-response-bad-request) #f))))
 
-(define (handle-request request)
-  (values
-   (string-append "HTTP/1.0 200 OK\n\n"
-                  (hypertext
-                   (html
-                    (head
-                     (title "Echo Service"))
-                    (body
-                     (h1 "Echo Service")
-                     (hr)
-                     (h3 "Request Info")
-                     (ul
-                      (li (strong "Date") (text ": " (date->string (current-date) #t)))
-                      (li (strong "Method") (text ": " (http-request-method request)))
-                      (li (strong "URI") (text ": " (http-request-uri request)))
-                      (li (strong "HTTP Major Version")
-                          (text (format ": ~A" (http-request-version-major request))))
-                      (li (strong "HTTP Minor Version")
-                          (text (format ": ~A" (http-request-version-minor request)))))
-                     (h3 "Headers")
-                     (ul
-                      (for ([(key value) (in-hash (http-request-headers request))])
-                        (li (strong (text key))
-                            (text ": ")
-                            (text value))))))))
-   #f))
+;; Handles a correctly parsed request.
+(define/contract (handle-request request)
+  (-> http-request? (values http-response? boolean?))
+  (let* ([html-string (hypertext
+                       (html
+                        (head
+                         (title "Echo Service"))
+                        (body
+                         (h1 "Echo Service")
+                         (hr)
+                         (h3 "Request Info")
+                         (ul
+                          (li (strong "Date") (text ": " (date->string (current-date) #t)))
+                          (li (strong "Method") (text ": " (http-request-method request)))
+                          (li (strong "URI") (text ": " (http-request-uri request)))
+                          (li (strong "HTTP Major Version")
+                              (text (format ": ~A" (http-request-version-major request))))
+                          (li (strong "HTTP Minor Version")
+                              (text (format ": ~A" (http-request-version-minor request)))))
+                         (h3 "Headers")
+                         (ul
+                          (for ([(key value) (in-hash (http-request-headers request))])
+                            (li (strong (text key))
+                                (text ": ")
+                                (text value)))))))]
+         [html-bytes (string->bytes/utf-8 html-string)])
+    (values (http-response-ok html-bytes) #f)))
 
-(define client-log (create-local-log "Client"))
+;; Logs an event to the "Client" category.
+(define client-log
+  (create-local-log "Client"))
