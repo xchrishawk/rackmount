@@ -97,6 +97,10 @@
 
 (module worker-module racket
 
+  ;; -- Requires --
+
+  (require "log.rkt")
+
   ;; -- Provides --
 
   (provide
@@ -121,7 +125,7 @@
   ;; -- Private Procedures --
 
   (define (main)
-    (worker-log "Worker activated, ready for jobs.")
+    (worker-log "Worker launched, waiting for jobs...")
     ;; Enter the main loop for this worker
     (let loop ([job-threads (set)])
       ;; Wait for an event to occur
@@ -162,7 +166,4 @@
               (worker-log "that was hard"))))
 
   (define (worker-log fmt . v)
-    ;; TODO - should go to main server log
-    (displayln (format "~A: ~A"
-                       (worker-identifier)
-                       (apply format fmt v)))))
+    (apply rackmount-log (worker-identifier) fmt v)))

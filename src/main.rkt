@@ -9,7 +9,9 @@
 
 ;; -- Types --
 
-(struct arguments (working-dir hostname port) #:transparent)
+(struct arguments (worker-count
+                   max-thread-count)
+  #:transparent)
 
 ;; -- Main Procedure --
 
@@ -17,16 +19,9 @@
   (let ([args (parse-arguments args-list)])
     (main-log "Launched with arguments \"~A\"" (string-join args-list " "))
     (validate-arguments args)
-    (let* ([config (server-config (arguments-working-dir args)
-                                  (arguments-hostname args)
-                                  (arguments-port args)
-                                  #t
-                                  4)]
-           [server (server-start config)])
-      (with-handlers ([exn:break? (λ (ex) (main-log "Received break, terminating server..."))])
-        (sync/enable-break (server-listener-terminated-evt server))
-        (main-log "Listener thread terminated unexpectedly! Terminating server..."))
-      (server-stop server))))
+    (let ([config (server-config (arguments-worker-count args)
+                                 (arguments-max-thread-count args))])
+      (server-run config))))
 
 ;; -- Private Procedures --
 
@@ -34,29 +29,23 @@
 (define parse-arguments
   (arg-parser
    arguments
-   (arguments #f #f #f)
-   (var ("-w" "--working-dir") working-dir)
-   (var ("-h" "--hostname") hostname)
-   (var ("-p" "--port") port
-        (λ (x)
-          (let ([converted (string->number x)])
-            (or converted (raise-user-error (format "Invalid port: ~A" x))))))))
+   (arguments 1		; worker-count: default = 1
+              1)	; max-thread-count: default = 1
+   (var ("-j" "--workers") worker-count
+        (λ (x) (string->number-or-error x (integer-in 1 64) "job count")))
+   (var ("-t" "--max-threads") max-thread-count
+        (λ (x) (string->number-or-error x (integer-in 1 64) "max thread count")))))
+
+;; Either converts a string to a number or raises a user error.
+(define (string->number-or-error str predicate argument)
+  (let ([converted (string->number str)])
+    (if (predicate converted)
+        converted
+        (raise-user-error (format "Invalid ~A: ~A" argument str)))))
 
 ;; Validates an arguments struct.
 (define (validate-arguments args)
-  ;; Working directory
-  (let ([working-dir (arguments-working-dir args)])
-    (when (not working-dir)
-      (raise-user-error "Working directory not specified"))
-    (when (not (directory-exists? working-dir))
-      (raise-user-error (format "Working directory does not exist: ~A" working-dir))))
-  ;; Port
-  (let ([port (arguments-port args)])
-    (when (not port)
-      (raise-user-error "Port not specified"))
-    (when (not (and (exact-positive-integer? port)
-                    (<= 1 port 65535)))
-      (raise-user-error (format "Invalid port: ~A" port)))))
+  (void))
 
 ;; Logs an event to the "Main" category.
 (define main-log
