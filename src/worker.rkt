@@ -75,7 +75,9 @@
                           #:finish-tasks [finish-tasks #t]
                           #:synchronous [synchronous #t])
   (place-channel-put (opaque-worker-channel worker)
-                     (if finish-tasks 'terminate-after-completion 'terminate-immediately))
+                     (if finish-tasks
+                         'terminate-after-completion
+                         'terminate-immediately))
   (when synchronous
     (sync (worker-terminated-evt worker)))
   (void))
@@ -132,6 +134,7 @@
 
   (require "client.rkt")
   (require "log.rkt")
+  (require "task.rkt")
 
   ;; -- Provides --
 
@@ -159,68 +162,62 @@
   (define (main)
     (worker-log "Worker launched, waiting for tasks...")
     ;; Enter the main loop for this worker
-    (let ([remaining-threads
-           (let loop ([task-threads (set)] [terminating #f])
+    (let ([remaining-tasks
+           (let loop ([tasks (set)] [terminating #f])
              ;; Wait for an event to occur
-             (let* ([syncable-evts (list (worker-channel)		; message from controller
-                                         (set->list task-threads))]     ; task thread termination
-                    [next-evt (apply sync (flatten syncable-evts))])
+             (let* ([task-completed-evts (map gen-task-completed-evt (set->list tasks))]
+                    [syncable-evts (cons (worker-channel) task-completed-evts)]
+                    [next-evt (apply sync syncable-evts)])
                (match next-evt
 
                  ;; 'terminate-immediately message - immediately quit and return set of threads
                  ['terminate-immediately
-                  (when (not (set-empty? task-threads))
+                  (when (not (set-empty? tasks))
                     (worker-log "Warning: terminating while there are still ~A tasks active!"
-                                (set-count task-threads)))
-                  task-threads]
+                                (set-count tasks)))
+                  tasks]
 
                  ;; 'terminate-after-completion message - quit after all tasks complete
                  ['terminate-after-completion
                   (cond
                     ;; No active tasks, OK to shut down immediately
-                    [(set-empty? task-threads) task-threads]
+                    [(set-empty? tasks) tasks]
                     ;; At least one active task, need to wait for them to terminate
                     [else
-                     (worker-log "Terminating after ~A tasks complete..."
-                                 (set-count task-threads))
-                     (loop task-threads #t)])]
+                     (worker-log "Terminating after ~A tasks complete..." (set-count tasks))
+                     (loop tasks #t)])]
 
                  ;; Task-count message - reply with number of active task threads
                  ['task-count
-                  (place-channel-put (worker-channel) (set-count task-threads))
-                  (loop task-threads terminating)]
+                  (place-channel-put (worker-channel) (set-count tasks))
+                  (loop tasks terminating)]
 
-                 ;; Thread terminated - remove it from our list
-                 [(? (λ (evt) (set-member? task-threads evt)) thd)
-                  (let ([new-task-threads (set-remove task-threads thd)])
+                 ;; Task terminated - remove it from our list
+                 [(? (λ (evt) (set-member? tasks evt)) task)
+                  (let ([new-tasks (set-remove tasks task)])
                     (cond
                       ;; We are terminating *and* our last task just finished. Close the worker.
-                      [(and terminating (set-empty? new-task-threads))
-                       new-task-threads]
+                      [(and terminating (set-empty? new-tasks)) new-tasks]
                       ;; Either we're not terminating or there are still tasks left. Keep going.
-                      [else
-                       (loop new-task-threads terminating)]))]
+                      [else (loop new-tasks terminating)]))]
 
                  ;; New client connected
                  [(list 'client (? input-port? input-port) (? output-port? output-port))
-                  (let ([client-thread (client-start "." input-port output-port void)])
-                    (loop (set-add task-threads client-thread) terminating))]
-
-                 ;; Demo operation
-                 ['heavy-crunch
-                  (let ([thd (start-heavy-crunch)])
-                    (loop (set-add task-threads thd) terminating))]
+                  (let ([client-task (make-client-task input-port output-port)])
+                    (gen-task-start client-task)
+                    (loop (set-add tasks client-task) terminating))]
 
                  ;; Unknown event type - log and ignore
                  [else
                   (worker-log "Received event (~A), don't know what to do with it - discarding." next-evt)
-                  (loop task-threads terminating)])))])
+                  (loop tasks terminating)])))])
 
       ;; Immediately kill any remaining threads
-      (when (not (set-empty? remaining-threads))
-        (worker-log "Immediately terminating ~A tasks." (set-count remaining-threads))
-        (for ([thd (in-set remaining-threads)])
-          (kill-thread thd)))
+      (when (not (set-empty? remaining-tasks))
+        (worker-log "Immediately terminating ~A tasks." (set-count remaining-tasks))
+        (for ([task (in-set remaining-tasks)])
+          (gen-task-cancel task)
+          (sync (gen-task-completed-evt task))))
 
       ;; Log shutdown
       (worker-log "Worker terminated.")))
