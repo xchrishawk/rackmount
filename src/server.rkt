@@ -19,12 +19,18 @@
   [server-run (-> server-config? any)]
   ;; Struct containing server configuration.
   [struct server-config ([worker-count exact-positive-integer?]
-                         [max-thread-count exact-positive-integer?])]))
+                         [max-thread-count exact-positive-integer?]
+                         [working-dir string?]
+                         [interface (or/c string? false?)]
+                         [port-number port-number?])]))
 
 ;; -- Structs --
 
 (struct server-config (worker-count
-                       max-thread-count)
+                       max-thread-count
+                       working-dir
+                       interface
+                       port-number)
   #:transparent)
 
 ;; -- Public Procedures --
@@ -32,9 +38,8 @@
 (define (server-run config)
   (server-log "Launching server...")
   (let ([workers (make-workers (server-config-worker-count config))])
-    (for ([x (in-range 32)])
-      (workers-send-job workers 'heavy-crunch)
-      (sleep 1))
+    (for ([x (in-range 8)])
+      (workers-send-job workers 'heavy-crunch))
     (workers-terminate workers))
   (server-log "Server terminated."))
 
