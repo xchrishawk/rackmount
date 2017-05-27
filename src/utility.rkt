@@ -2,13 +2,17 @@
 ;; utility.rkt
 ;; Chris Vig (chris@invictus.so)
 ;;
+;; Module containing general-purpose utility macros and methods.
+;;
 
 #lang racket
 
 ;; -- Provides --
 
-(provide thread-start)
-(provide with-semaphore)
+(provide
+ thread-start
+ with-semaphore
+ define-void-return)
 (provide
  (contract-out
   [delayed (-> (values (-> any) (-> any/c any)))]
@@ -31,6 +35,12 @@
    (λ ()
      expr0
      expr ...)))
+
+(define-syntax-rule (define-void-return (name args ...) body0 body ...)
+  (define (name args ...)
+    body0
+    body ...
+    (void)))
 
 ;; -- Procedures --
 

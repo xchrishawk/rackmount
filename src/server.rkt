@@ -2,6 +2,10 @@
 ;; server.rkt
 ;; Chris Vig (chris@invictus.so)
 ;;
+;; This module defines the main server procedure, which runs on the main startup
+;; thread for the server application. This acts as the "listener" thread which
+;; accepts new clients and dispatches them to workers for servicing.
+;;
 
 #lang racket
 
@@ -15,8 +19,10 @@
 
 (provide
  (contract-out
+
   ;; Main server procedure.
   [server-run (-> server-config? any)]
+
   ;; Struct containing server configuration.
   [struct server-config ([worker-count exact-positive-integer?]
                          [max-thread-count exact-positive-integer?]
@@ -59,16 +65,17 @@
           ;; Received a new client connection
           [(equal? evt listener)
            (let-values ([(input-port output-port) (tcp-accept listener)])
-             (workers-send-task workers (list 'client input-port output-port)))
+             (workers-queue-task workers (list 'client input-port output-port)))
            (loop)]
           ;; Received break - shut down
           [(equal? evt 'break)
            (server-log "Received break, terminating server...")]
           ;; Unknown event?
-          [else (server-log "Received unknown event (~A). Ignoring..." evt)])))
+          [else
+           (server-log "Received unknown event (~A). Ignoring..." evt)])))
     ;; Shut down
     (tcp-close listener)
-    (workers-terminate workers))
+    (workers-terminate workers #:finish-tasks #f))
   (server-log "Server terminated."))
 
 ;; -- Private Procedures --

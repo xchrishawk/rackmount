@@ -24,15 +24,29 @@
 (struct client-task (thread input-port output-port)
   #:mutable
   #:methods gen:task
-  [(define (gen-task-start task)
-     (let ([thd (thread (λ () (client-proc (client-task-input-port task)
-                                           (client-task-output-port task))))])
+  [;; Starts the task.
+   (define (gen-task-start task)
+     (let ([thd (thread (λ ()
+                          (client-proc (client-task-input-port task)
+                                       (client-task-output-port task))))])
        (set-client-task-thread! task thd)))
-   (define (gen-task-cancel task)
+
+   ;; Cleans up the task without starting it.
+   (define (gen-task-reject task)
+     (close-input-port (client-task-input-port task))
+     (close-output-port (client-task-output-port task)))
+
+   ;; Cancels the task and optionally waits for thread to terminate
+   (define (gen-task-cancel task #:synchronous [synchronous #t])
      (let ([thd (client-task-thread task)])
        (if thd
-           (thread-send thd 'shutdown)
+           (begin
+             (thread-send thd 'shutdown)
+             (when synchronous
+               (sync (gen-task-completed-evt task))))
            (error "Task has not been started!"))))
+
+   ;; Returns an event ready when the task has completed.
    (define (gen-task-completed-evt task)
      (let ([thd (client-task-thread task)])
        (if thd
@@ -47,12 +61,21 @@
 ;; -- Private Procedures --
 
 (define (client-proc input-port output-port)
+  (displayln "CLIENT STARTED")
   (let loop ()
     (let ([evt (sync (thread-receive-evt) (read-line-evt input-port 'any))])
-      (match evt
-        [(? string? line)
-         (displayln (format "RX: ~A" line))
-         (displayln (format "You said: ~A" line) output-port)
+      (cond
+        [(string? evt)
+         (displayln (format "RX: ~A" evt))
          (loop)]
-        [eof (void)]
-        ['shutdown (void)]))))
+        [(equal? evt eof)
+         (displayln (format "Client fucked off"))]
+        [(and (equal? evt (thread-receive-evt))
+              (equal? (thread-receive) 'shutdown))
+         (displayln "Got shutdown event")]
+        [else
+         (error "got something weird" evt)])))
+  ;; Clean up
+  (close-input-port input-port)
+  (close-output-port output-port)
+  (displayln "CLIENT DONE"))

@@ -13,6 +13,7 @@
 ;; -- Requires --
 
 (require syntax/location)
+(require "utility.rkt")
 
 ;; -- Provides --
 
@@ -23,27 +24,45 @@
 
   ;; Create a new worker with the specified identifier.
   [make-worker (-> string? opaque-worker?)]
+
   ;; Returns the identifier of a worker.
   [worker-identifier (-> opaque-worker? string?)]
-  ;; Sends a task to a worker.
-  [worker-send-task (-> opaque-worker? any/c void?)]
+
+  ;; Queues a task on a worker.
+  [worker-queue-task (-> opaque-worker? task-spec? void?)]
+
   ;; Returns the number of active tasks the worker has.
   [worker-task-count (-> opaque-worker? exact-nonnegative-integer?)]
+
   ;; Terminates the specified worker.
+  ;;
+  ;; If #:finish-tasks is set to #t (the default), all active tasks will be allowed
+  ;; to complete normally before the place will terminate. Otherwise, all active
+  ;; tasks will be immediately cancelled.
+  ;;
+  ;; If #:synchronous is set to #t (the default), this method will block until the
+  ;; worker place has terminated by syncing on the (worker-terminated-evt) event.
   [worker-terminate (->* (opaque-worker?)
                          (#:finish-tasks boolean?
                           #:synchronous boolean?)
                          void?)]
-  ;; Returns a syncable event which is ready after the specified worker is terminated.
+
+  ;; Returns a syncable event which is ready after the specified worker has
+  ;; completely terminated. The result of the synchronization event is the worker
+  ;; itself.
   [worker-terminated-evt (-> opaque-worker? evt?)]
 
   ;; -- Worker Groups --
 
   ;; Makes N workers with auto-generated identifiers.
   [make-workers (-> exact-positive-integer? (listof opaque-worker?))]
-  ;; Sends a task to the worker with the lowest number of active tasks.
-  [workers-send-task (-> (listof opaque-worker?) any/c void?)]
-  ;; Terminates all of the specified workers.
+
+  ;; Queues a task on the worker with the lowest number of active tasks.
+  [workers-queue-task (-> (listof opaque-worker?) task-spec? void?)]
+
+  ;; Terminates all of the specified workers. See (worker-terminate) for a
+  ;; description of the arguments. Note that all workers will be commanded to
+  ;; terminate prior to syncing on any worker's terminated event.
   [workers-terminate (->* ((listof opaque-worker?))
                           (#:finish-tasks boolean?
                            #:synchronous boolean?)
@@ -65,25 +84,26 @@
 (define (worker-identifier worker)
   (opaque-worker-identifier worker))
 
-(define (worker-send-task worker task)
+(define (worker-queue-task worker task)
   (place-channel-put (opaque-worker-channel worker) task))
 
 (define (worker-task-count worker)
   (place-channel-put/get (opaque-worker-channel worker) 'task-count))
 
-(define (worker-terminate worker
-                          #:finish-tasks [finish-tasks #t]
-                          #:synchronous [synchronous #t])
+(define-void-return (worker-terminate worker
+                                      #:finish-tasks [finish-tasks #t]
+                                      #:synchronous [synchronous #t])
   (place-channel-put (opaque-worker-channel worker)
                      (if finish-tasks
                          'terminate-after-completion
                          'terminate-immediately))
   (when synchronous
-    (sync (worker-terminated-evt worker)))
-  (void))
+    (sync (worker-terminated-evt worker))))
 
 (define (worker-terminated-evt worker)
-  (place-dead-evt (opaque-worker-place worker)))
+  (wrap-evt
+   (place-dead-evt (opaque-worker-place worker))
+   (λ (evt) worker)))
 
 ;; -- Public Procedures (Worker Groups) --
 
@@ -92,22 +112,24 @@
     (let ([identifier (format "Worker ~A" n)])
       (make-worker identifier))))
 
-(define (workers-send-task workers task)
+(define-void-return (workers-queue-task workers task)
   (let ([worker (worker-with-lowest-task-count workers)])
-    (worker-send-task worker task)))
+    (worker-queue-task worker task)))
 
-(define (workers-terminate workers
-                           #:finish-tasks [finish-tasks #t]
-                           #:synchronous [synchronous #t])
-  ;; Send terminate to all workers immediately
+(define-void-return (workers-terminate workers
+                                       #:finish-tasks [finish-tasks #t]
+                                       #:synchronous [synchronous #t])
   (for ([worker (in-list workers)])
     (worker-terminate worker #:finish-tasks finish-tasks #:synchronous #f))
-  ;; Wait for them all to complete
   (when synchronous
     (for ([worker (in-list workers)])
       (sync (worker-terminated-evt worker)))))
 
 ;; -- Private Procedures --
+
+;; Returns true if the argument is allowed as a task specifier.
+(define (task-spec? x)
+  (place-message-allowed? x))
 
 ;; Returns the worker from the list with the lowest task count.
 (define (worker-with-lowest-task-count workers)
@@ -159,79 +181,100 @@
 
   ;; -- Private Procedures --
 
+  ;; Main procedure.
   (define (main)
     (worker-log "Worker launched, waiting for tasks...")
     ;; Enter the main loop for this worker
-    (let ([remaining-tasks
-           (let loop ([tasks (set)] [terminating #f])
-             ;; Wait for an event to occur
-             (let* ([task-completed-evts (map gen-task-completed-evt (set->list tasks))]
-                    [syncable-evts (cons (worker-channel) task-completed-evts)]
-                    [next-evt (apply sync syncable-evts)])
-               (match next-evt
+    (let ([remaining-tasks (main-loop)])
 
-                 ;; 'terminate-immediately message - immediately quit and return set of threads
-                 ['terminate-immediately
-                  (when (not (set-empty? tasks))
-                    (worker-log "Warning: terminating while there are still ~A tasks active!"
-                                (set-count tasks)))
-                  tasks]
-
-                 ;; 'terminate-after-completion message - quit after all tasks complete
-                 ['terminate-after-completion
-                  (cond
-                    ;; No active tasks, OK to shut down immediately
-                    [(set-empty? tasks) tasks]
-                    ;; At least one active task, need to wait for them to terminate
-                    [else
-                     (worker-log "Terminating after ~A tasks complete..." (set-count tasks))
-                     (loop tasks #t)])]
-
-                 ;; Task-count message - reply with number of active task threads
-                 ['task-count
-                  (place-channel-put (worker-channel) (set-count tasks))
-                  (loop tasks terminating)]
-
-                 ;; Task terminated - remove it from our list
-                 [(? (λ (evt) (set-member? tasks evt)) task)
-                  (let ([new-tasks (set-remove tasks task)])
-                    (cond
-                      ;; We are terminating *and* our last task just finished. Close the worker.
-                      [(and terminating (set-empty? new-tasks)) new-tasks]
-                      ;; Either we're not terminating or there are still tasks left. Keep going.
-                      [else (loop new-tasks terminating)]))]
-
-                 ;; New client connected
-                 [(list 'client (? input-port? input-port) (? output-port? output-port))
-                  (let ([client-task (make-client-task input-port output-port)])
-                    (gen-task-start client-task)
-                    (loop (set-add tasks client-task) terminating))]
-
-                 ;; Unknown event type - log and ignore
-                 [else
-                  (worker-log "Received event (~A), don't know what to do with it - discarding." next-evt)
-                  (loop tasks terminating)])))])
-
-      ;; Immediately kill any remaining threads
-      (when (not (set-empty? remaining-tasks))
-        (worker-log "Immediately terminating ~A tasks." (set-count remaining-tasks))
-        (for ([task (in-set remaining-tasks)])
-          (gen-task-cancel task)
-          (sync (gen-task-completed-evt task))))
+      ;; Cancel any remaining tasks
+      (when (not (null? remaining-tasks))
+        (worker-log "WARNING: Terminating ~A active tasks..." (length remaining-tasks))
+        (for ([task (in-list remaining-tasks)])
+          (gen-task-cancel task #:synchronous #f))
+        (apply sync (map gen-task-completed-evt remaining-tasks)))
 
       ;; Log shutdown
       (worker-log "Worker terminated.")))
 
-  (define (wait-for-task)
-    (sync (worker-channel)))
+  ;; Main loop - returns any active tasks left after shutdown.
+  (define (main-loop)
+    (set->list
+     (let loop ([tasks (set)] [terminating #f])
 
-  (define (start-heavy-crunch)
-    (thread (λ ()
-              (worker-log "heavy crunch whoa!")
-              (let loop ([n (random 4294967087)])
-                (when (not (zero? n))
-                  (loop (sub1 n))))
-              (worker-log "that was hard"))))
+       ;; Wait for next event
+       (let* ([task-list (set->list tasks)]
+              [task-completed-evts (map gen-task-completed-evt task-list)]
+              [syncable-evts (cons (worker-channel) task-completed-evts)])
+         (match (apply sync syncable-evts)
 
+           ;; Return immediately without waiting for tasks to complete
+           ['terminate-immediately
+            (worker-log "Immediate termination requested.")
+            tasks]
+
+           ;; Wait for all tasks to complete normally, then terminate
+           ['terminate-after-completion
+            (cond
+              ;; No tasks remaining, we can terminate immediately
+              [(set-empty? tasks)
+               (worker-log "Normal termination requested - no active tasks.")
+               tasks]
+              ;; At least one task remaining, wait for all to complete
+              [else
+               (worker-log "Normal termination requested - waiting on ~A tasks..." (set-count tasks))
+               (loop tasks #t)])]
+
+           ;; Request for number of active tasks - reply and keep looping
+           ['task-count
+            (place-channel-put (worker-channel) (set-count tasks))
+            (loop tasks terminating)]
+
+           ;; Task completed
+           [(? (λ (evt) (set-member? tasks evt)) task)
+            (let-values ([(new-tasks continue) (complete-task task tasks terminating)])
+              (if continue
+                  (loop new-tasks terminating)
+                  new-tasks))]
+
+           ;; New task spec
+           [(app task-from-task-spec (? task? task))
+            (let ([new-tasks (queue-task task tasks terminating)])
+              (loop new-tasks terminating))]
+
+           ;; An unknown event? Log it and keep going...
+           [else
+            (worker-log "WARNING: Received unknown event (~A) - ignoring and continuing...")
+            (loop tasks terminating)])))))
+
+  ;; Queues the specified task. Returns the new set of active tasks.
+  (define (queue-task task tasks terminating)
+    (if terminating
+        (begin
+          (gen-task-reject task)
+          (worker-log "WARNING: Rejecting task because worker is terminating.")
+          tasks)
+        (let ([new-tasks (set-add tasks task)])
+          (worker-log "Task started, ~A tasks now active." (set-count new-tasks))
+          (gen-task-start task)
+          new-tasks)))
+
+  ;; Completes the specified task. Returns the new set of active tasks.
+  (define (complete-task task tasks terminating)
+    (let* ([new-tasks (set-remove tasks task)]
+           [continue (not (and terminating (set-empty? new-tasks)))])
+      (worker-log "Task completed, ~A tasks now active." (set-count new-tasks))
+      (values new-tasks continue)))
+
+  ;; Gets a task from the specified task spec.
+  (define (task-from-task-spec task-spec)
+    (match task-spec
+      ;; Client connected
+      [(list 'client (? input-port? input-port) (? output-port? output-port))
+       (make-client-task input-port output-port)]
+      ;; Don't know what this is - ignore it
+      [else #f]))
+
+  ;; Logs an event to this worker's category.
   (define (worker-log fmt . v)
     (apply rackmount-log (worker-identifier) fmt v)))
