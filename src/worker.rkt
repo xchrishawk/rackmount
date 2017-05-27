@@ -154,7 +154,7 @@
 
   ;; -- Requires --
 
-  (require "client.rkt")
+  (require "client-task.rkt")
   (require "log.rkt")
   (require "task.rkt")
 
