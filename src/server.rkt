@@ -11,6 +11,7 @@
 
 ;; -- Requires --
 
+(require racket/generator)
 (require "log.rkt")
 (require "utility.rkt")
 (require "worker.rkt")
@@ -47,7 +48,9 @@
 
 (define (server-run config)
   (server-log "Launching server...")
-  (let (;; Launch worker places
+  (let (;; Client ID generator
+        [client-id-generator (sequence->generator (in-naturals))]
+        ;; Launch worker places
         [workers (make-workers (server-config-worker-count config))]
         ;; Launch listener
         [listener (tcp-listen (server-config-port-number config)
@@ -64,8 +67,9 @@
         (cond
           ;; Received a new client connection
           [(equal? evt listener)
-           (let-values ([(input-port output-port) (tcp-accept listener)])
-             (workers-queue-task workers (list 'client input-port output-port)))
+           (let-values ([(identifier) (format "Client ~A" (client-id-generator))]
+                        [(input-port output-port) (tcp-accept listener)])
+             (workers-queue-task workers (list 'client identifier input-port output-port)))
            (loop)]
           ;; Received break - shut down
           [(equal? evt 'break)

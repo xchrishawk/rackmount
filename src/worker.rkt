@@ -270,11 +270,14 @@
   (define (task-from-task-spec task-spec)
     (match task-spec
       ;; Client connected
-      [(list 'client (? input-port? input-port) (? output-port? output-port))
-       (make-client-task input-port output-port)]
+      [(list 'client
+             (? string? identifier)
+             (? input-port? input-port)
+             (? output-port? output-port))
+       (make-client-task identifier input-port output-port)]
       ;; Don't know what this is - ignore it
       [else #f]))
 
   ;; Logs an event to this worker's category.
   (define (worker-log fmt . v)
-    (apply rackmount-log (worker-identifier) fmt v)))
+    (apply rackmount-log "Worker" (worker-identifier) fmt v)))

@@ -18,24 +18,25 @@
  (contract-out
 
   ;; Runs the main client handling procedure.
-  [client-proc (-> input-port? output-port? any)]))
+  [client-proc (-> string? input-port? output-port? any)]))
 
 ;; -- Structs --
 
 (struct client-info (state
+                     identifier
                      input-port
                      output-port)
   #:transparent)
 
 ;; -- Public Procedures --
 
-(define (client-proc input-port output-port)
-  (let ([client (client-info 'start input-port output-port)])
-    (client-log "Client connected...")
+(define (client-proc identifier input-port output-port)
+  (let ([client (make-client-info identifier input-port output-port)])
+    (client-log client "Client connected...")
     (client-loop client)
     (close-input-port input-port)
     (close-output-port output-port)
-    (client-log "Client connection terminated.")))
+    (client-log client "Client connection terminated.")))
 
 ;; -- Private Procedures (State Machine) --
 
@@ -83,8 +84,22 @@
 
 ;; -- Private Procedures (Helpers) --
 
+;; Create a new client-info struct with the specified values.
+(define (make-client-info identifier input-port output-port)
+  (client-info 'start
+               identifier
+               input-port
+               output-port))
+
+;; Create a new client-info struct with basic data copied from the specified struct.
+(define (reset-client-info client)
+  (make-client-info (client-info-identifier client)
+                    (client-info-input-port client)
+                    (client-info-output-port client)))
+
+;; Read a single line from the client. Returns #f if no line could be read.
 (define (read-line-from-client client)
-  (let ([evt (sync (read-line-evt (client-info-input-port client))
+  (let ([evt (sync (read-line-evt (client-info-input-port client) 'any)
                    (thread-receive-evt))])
     (match evt
       ;; Client sent a line of text.
@@ -96,9 +111,11 @@
        (match (thread-receive)
          ['shutdown #f])])))
 
+;; Returns a copy of the specified client-info struct with the state updated.
 (define (update-client-state client state)
-  (client-log "State is now: ~A" state)
+  (client-log client "State is now: ~A" state)
   (struct-copy client-info client [state state]))
 
-(define client-log
-  (create-local-log "Client"))
+;; Local logging procedure.
+(define (client-log client fmt . v)
+  (apply rackmount-log "Client" (client-info-identifier client) fmt v))

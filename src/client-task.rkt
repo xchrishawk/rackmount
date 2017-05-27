@@ -19,18 +19,18 @@
 (provide
  (contract-out
   ;; Creates a new client task object.
-  [make-client-task (-> input-port? output-port? task?)]))
+  [make-client-task (-> string? input-port? output-port? task?)]))
 
 ;; -- Structs --
 
-(struct client-task (thread input-port output-port)
+(struct client-task (thread identifier input-port output-port)
   #:mutable
   #:methods gen:task
   [;; Starts the task.
    (define (gen-task-start task)
-     (let ([thd (thread (λ ()
-                          (client-proc (client-task-input-port task)
-                                       (client-task-output-port task))))])
+     (let ([thd (thread (λ () (client-proc (client-task-identifier task)
+                                           (client-task-input-port task)
+                                           (client-task-output-port task))))])
        (set-client-task-thread! task thd)))
 
    ;; Task was rejected - close the ports.
@@ -57,5 +57,5 @@
 
 ;; -- Public Procedures --
 
-(define (make-client-task input-port output-port)
-  (client-task #f input-port output-port))
+(define (make-client-task identifier input-port output-port)
+  (client-task #f identifier input-port output-port))
