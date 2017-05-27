@@ -30,7 +30,9 @@
                                  (arguments-max-thread-count args)
                                  (arguments-working-dir args)
                                  (arguments-interface args)
-                                 (arguments-port-number args))])
+                                 (arguments-port-number args)
+                                 #t	; reusable
+                                 4)])	; max wait
       (server-run config))))
 
 ;; -- Private Procedures --
