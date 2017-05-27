@@ -10,6 +10,7 @@
 
 ;; -- Requires --
 
+(require "log.rkt")
 (require "task.rkt")
 
 ;; -- Provides --
@@ -31,7 +32,7 @@
                                        (client-task-output-port task))))])
        (set-client-task-thread! task thd)))
 
-   ;; Cleans up the task without starting it.
+   ;; Task was rejected - close the ports.
    (define (gen-task-reject task)
      (close-input-port (client-task-input-port task))
      (close-output-port (client-task-output-port task)))
@@ -61,21 +62,43 @@
 ;; -- Private Procedures --
 
 (define (client-proc input-port output-port)
-  (displayln "CLIENT STARTED")
+  (client-log "Client connected...")
   (let loop ()
     (let ([evt (sync (thread-receive-evt) (read-line-evt input-port 'any))])
-      (cond
-        [(string? evt)
-         (displayln (format "RX: ~A" evt))
+      (match evt
+
+        ;; Client sent a new line to process
+        [(? string? line)
+         (client-log "RX: ~A" line)
+         (displayln (format "You sent: ~A" line) output-port)
+         (flush-output output-port)
          (loop)]
-        [(equal? evt eof)
-         (displayln (format "Client fucked off"))]
-        [(and (equal? evt (thread-receive-evt))
-              (equal? (thread-receive) 'shutdown))
-         (displayln "Got shutdown event")]
+
+        ;; Client disconnected on their end
+        [(? (λ (evt) (equal? evt eof)) _)
+         (client-log "Client disconnected on remote end.")]
+
+        ;; Thread received a message
+        [(? (λ (evt) (equal? evt (thread-receive-evt))) evt)
+         (match (thread-receive)
+           ;; Shutdown command
+           ['shutdown
+            (client-log "Received shutdown command, terminating client...")]
+           ;; Unknown command?
+           [else
+            (client-log "Received unknown command, ignoring...")
+            (loop)])]
+
+        ;; Unknown event?
         [else
-         (error "got something weird" evt)])))
+         (client-log "Received unknown event (~A), ignoring..." evt)
+         (loop)])))
+
   ;; Clean up
   (close-input-port input-port)
   (close-output-port output-port)
-  (displayln "CLIENT DONE"))
+  (client-log "Client connection terminated."))
+
+;; Logs an event to the "Client" category.
+(define client-log
+  (create-local-log "Client"))

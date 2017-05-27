@@ -2,6 +2,8 @@
 ;; log.rkt
 ;; Chris Vig (chris@invictus.so)
 ;;
+;; Module containing utility functions for logging.
+;;
 
 #lang racket
 
