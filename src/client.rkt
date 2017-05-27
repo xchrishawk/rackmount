@@ -21,11 +21,12 @@
 ;; -- Provides --
 
 (provide
- (contract-out
+ client-start)
+; (contract-out
   ;; Launches a client thread.
-  [client-start (-> string? input-port? output-port? (-> any) opaque-client?)]
+;  [client-start (-> string? input-port? output-port? (-> any) opaque-client?)]
   ;; Terminates a client thread.
-  [client-stop (-> opaque-client? void?)]))
+;  [client-stop (-> opaque-client? void?)]))
 
 ;; -- Types --
 
@@ -34,44 +35,41 @@
 ;; -- Public Procedures --
 
 (define (client-start working-dir input-port output-port shutdown-closure)
-  (let ([client-thread
-         (thread-start
-          (client-log "Client connected. Client thread starting...")
-          (let loop ([accumulated-request (string)])
-            ;; Wait for the next event
-            (let ([evt (sync (read-line-evt input-port 'any)
-                             (thread-receive-evt))])
-              (cond
-                ;; Received line from client
-                [(string? evt)
-                 (if (string-empty? evt)
-                     ;; Blank line - this request is complete
-                     ;; Get the HTTP response to send, and return it to the client
-                     (let*-values ([(response continue) (handle-request-string accumulated-request)]
-                                   [(response-bytes) (http-response->bytes response)])
-                       (write-bytes response-bytes output-port)
-                       (when continue
-                         (loop (string))))
-                     ;; Non-blank line - continue accumulating
-                     (loop (string-append accumulated-request "\n" evt)))]
-                ;; Client disconnected from their end
-                [(equal? evt eof)
-                 (client-log "Client disconnected.")
-                 (void)]
-                ;; Shutdown command
-                [(and (equal? evt (thread-receive-evt))
-                      (equal? (thread-receive) 'shutdown))
-                   (void)]
-                ;; Unknown event?
-                [else (error "Unknown event??")])))
-          ;; Shut down ports
-          (close-input-port input-port)
-          (close-output-port output-port)
-          ;; Perform shutdown closure then end thread
-          (shutdown-closure)
-          (client-log "Client thread terminated normally."))])
-    ;; Return an opaque object representing the client
-    (opaque-client client-thread)))
+  (thread-start
+   (client-log "Client connected. Client thread starting...")
+   (let loop ([accumulated-request (string)])
+     ;; Wait for the next event
+     (let ([evt (sync (read-line-evt input-port 'any)
+                      (thread-receive-evt))])
+       (cond
+         ;; Received line from client
+         [(string? evt)
+          (if (string-empty? evt)
+              ;; Blank line - this request is complete
+              ;; Get the HTTP response to send, and return it to the client
+              (let*-values ([(response continue) (handle-request-string accumulated-request)]
+                            [(response-bytes) (http-response->bytes response)])
+                (write-bytes response-bytes output-port)
+                (when continue
+                  (loop (string))))
+              ;; Non-blank line - continue accumulating
+              (loop (string-append accumulated-request "\n" evt)))]
+         ;; Client disconnected from their end
+         [(equal? evt eof)
+          (client-log "Client disconnected.")
+          (void)]
+         ;; Shutdown command
+         [(and (equal? evt (thread-receive-evt))
+               (equal? (thread-receive) 'shutdown))
+          (void)]
+         ;; Unknown event?
+         [else (error "Unknown event??")])))
+   ;; Shut down ports
+   (close-input-port input-port)
+   (close-output-port output-port)
+   ;; Perform shutdown closure then end thread
+   (shutdown-closure)
+   (client-log "Client thread terminated normally.")))
 
 (define (client-stop client)
   (let ([client-thread (opaque-client-thread client)])

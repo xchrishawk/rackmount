@@ -59,10 +59,7 @@
           ;; Received a new client connection
           [(equal? evt listener)
            (let-values ([(input-port output-port) (tcp-accept listener)])
-             ;; todo
-             (displayln "go away" output-port)
-             (close-input-port input-port)
-             (close-output-port output-port))
+             (workers-send-job workers (list 'client input-port output-port)))
            (loop)]
           ;; Received break - shut down
           [(equal? evt 'break)

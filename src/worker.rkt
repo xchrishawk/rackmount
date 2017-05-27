@@ -130,6 +130,7 @@
 
   ;; -- Requires --
 
+  (require "client.rkt")
   (require "log.rkt")
 
   ;; -- Provides --
@@ -164,17 +165,17 @@
              (let* ([syncable-evts (list (worker-channel)		; message from controller
                                          (set->list job-threads))]     	; job thread termination
                     [next-evt (apply sync (flatten syncable-evts))])
-               (cond
+               (match next-evt
 
                  ;; 'terminate-immediately message - immediately quit and return set of threads
-                 [(equal? next-evt 'terminate-immediately)
+                 ['terminate-immediately
                   (when (not (set-empty? job-threads))
                     (worker-log "Warning: terminating while there are still ~A jobs active!"
                                 (set-count job-threads)))
                   job-threads]
 
                  ;; 'terminate-after-completion message - quit after all jobs complete
-                 [(equal? next-evt 'terminate-after-completion)
+                 ['terminate-after-completion
                   (cond
                     ;; No active jobs, OK to shut down immediately
                     [(set-empty? job-threads) job-threads]
@@ -185,13 +186,13 @@
                      (loop job-threads #t)])]
 
                  ;; Job-count message - reply with number of active job threads
-                 [(equal? next-evt 'job-count)
+                 ['job-count
                   (place-channel-put (worker-channel) (set-count job-threads))
                   (loop job-threads terminating)]
 
                  ;; Thread terminated - remove it from our list
-                 [(set-member? job-threads next-evt)
-                  (let ([new-job-threads (set-remove job-threads next-evt)])
+                 [(? (λ (evt) (set-member? job-threads evt)) thd)
+                  (let ([new-job-threads (set-remove job-threads thd)])
                     (cond
                       ;; We are terminating *and* our last job just finished. Close the worker.
                       [(and terminating (set-empty? new-job-threads))
@@ -200,8 +201,13 @@
                       [else
                        (loop new-job-threads terminating)]))]
 
+                 ;; New client connected
+                 [(list 'client (? input-port? input-port) (? output-port? output-port))
+                  (let ([client-thread (client-start "." input-port output-port void)])
+                    (loop (set-add job-threads client-thread) terminating))]
+
                  ;; Demo operation
-                 [(equal? next-evt 'heavy-crunch)
+                 ['heavy-crunch
                   (let ([thd (start-heavy-crunch)])
                     (loop (set-add job-threads thd) terminating))]
 
