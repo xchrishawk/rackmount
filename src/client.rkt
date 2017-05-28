@@ -213,17 +213,20 @@
 
 ;; -- Private Procedures (Macro Helpers) --
 
+;;
 ;; Read a single line from the client. Returns:
+;;
 ;; - A string if a line was successfully received
 ;; - client-disconnected if the client disconnected from the remote end
 ;; - worker-terminated if the worker is terminating
+;; - timed-out if the client times out
+;;
 (define (get-line-helper client)
   (let* ([line-evt (read-line-evt (client-info-input-port client) 'any)]
          [message-evt (thread-receive-evt)]
-         [timeout-evt (let ([timeout (client-info-timeout client)])
-                        (if timeout (alarm-evt (+ (client-info-startup-time client) timeout)) #f))]
-         [syncable-evts (filter (not/c false?) (list line-evt message-evt timeout-evt))]
-         [evt (apply sync syncable-evts)])
+         [evt (sync/timeout (client-timeout-remaining client)
+                            line-evt
+                            message-evt)])
     (match evt
       ;; Client sent a line of text.
       [(? string? line) line]
@@ -234,8 +237,17 @@
        (match (thread-receive)
          ['shutdown 'worker-terminated])]
       ;; Connection timed out
-      [(? (λ (evt) (equal? evt timeout-evt)) _)
-       'timed-out])))
+      [#f 'timed-out])))
+
+;; Returns the timeout remaining for the specified client, or #f if there is no timeout.
+(define (client-timeout-remaining client)
+  (let ([startup-time (client-info-startup-time client)]
+        [timeout (client-info-timeout client)])
+    (if timeout
+        (/ (- (+ startup-time timeout)
+              (current-inexact-milliseconds))
+           1000.0)
+        #f)))
 
 ;; -- Macros --
 
