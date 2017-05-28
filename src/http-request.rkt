@@ -14,85 +14,60 @@
 
 (provide
  (contract-out
-  ;; Parses an HTTP request string.
-  [parse-http-request (-> string? http-request?)]))
 
-(provide
- (contract-out
-  ;; Struct representing an HTTP request.
-  [struct http-request ([method string?]
-                        [uri string?]
-                        [version-major exact-nonnegative-integer?]
-                        [version-minor exact-nonnegative-integer?]
-                        [headers (hash/c string? string?)])]))
-
-;; -- Structs --
-
-(struct http-request (method
-                      uri
-                      version-major
-                      version-minor
-                      headers)
-  #:transparent)
+  ;; Parses a request line.
+  ;;
+  ;; Returns either a list of (method uri major-version minor-version), or #f if
+  ;; the request line could not be successfully parsed.
+  [parse-request-line (-> string? (or/c list? false?))]))
 
 ;; -- Public Procedures --
 
-(define (parse-http-request request-string)
-  (let*-values ([(request) (open-input-string request-string)]
-                [(method) (mandatory read-token request "Method")]
-                [(uri) (mandatory read-uri request "URI")]
-                [(full-version major-version-string minor-version-string)
-                 (mandatory read-version request "Version")]
-                [(major-version) (string->version major-version-string)]
-                [(minor-version) (string->version minor-version-string)]
-                [(headers) (read-headers request)])
-    (http-request method uri major-version minor-version headers)))
+(define (parse-request-line line-string)
+  (let* ([line-port (open-input-string line-string)]
+         [method (read-from line-port token)]
+         [uri (read-from line-port uri)]
+         [version (read-from line-port http-version #:proc string->number)]
+         [major-version (if version (first version) #f)]
+         [minor-version (if version (second version) #f)])
+    (if (and method uri major-version minor-version)
+        (list method uri major-version minor-version)
+        #f)))
 
-;; -- Private Procedures (Parsing) --
+;; -- Private Utility (Read Primitives) --
 
-(define (read-headers request)
-  (let loop ([headers (hash)])
-    (match (read-header request)
-      [(list key value) (loop (hash-set headers key value))]
-      [#f headers])))
-
-(define (string->version str)
-  (let ([number (string->number str)])
-    (when (not (exact-positive-integer? number))
-      (error "Invalid HTTP version string:" str))
-    number))
-
-;; -- Private Procedures (Reading) --
-
-(define (mandatory proc request token-type)
-  (let ([result (proc request)])
+(define (read-from port
+                   token
+                   #:skip-space [skip-space #t]
+                   #:proc [proc #f])
+  ;; Skip leading whitespace, if needed
+  (when skip-space
+    (space port))
+  (let ([result (token port)])
     (if result
-        (apply values result)
-        (raise-rackmount-bad-http-request-error
-         "Failed to read token - expected ~A, got \"~A\""
-         token-type
-         (read-line request 'any)))))
+        (let* ([string-result (map bytes->string/utf-8 result)]
+               [processed-result (if proc (map proc string-result) string-result)])
+          (if (null? (rest processed-result))
+              (first processed-result)
+              processed-result))
+        #f)))
 
-(define (reader regex . indices)
-  (λ (request)
-    (let ([indices (if (not (empty? indices)) indices (list 1))]
-          [result (regexp-try-match regex request)])
-      (if result
-          (map bytes->string/utf-8 (apply list-refs result indices))
-          #f))))
+(define (reader re)
+  (λ (port)
+    (let ([result (regexp-try-match re port)])
+      (if result (rest result) #f))))
 
-(define read-token
-  ;; RFC2612 section 2.2
-  (reader #px#"^[[:space:]]*([\x21\x23-\x27\x2A\x2B\x2D\x2E\x30-\x39\x41-\x5A\x5E-\x7A\x7C\x7E]+)"))
+(define space
+  (reader #px#"^([[:space:]]*)"))
 
-(define read-uri
-  ;; TODO...
-  (reader #px#"^[[:space:]]*([[:graph:]]+)"))
+(define token
+  ;; RFC 2612, section 2.2
+  (reader #px#"^([\x21\x23-\x27\x2A\x2B\x2D\x2E\x30-\x39\x41-\x5A\x5E-\x7A\x7C\x7E]+)"))
 
-(define read-version
-  ;; RFC2612 section 3.1
-  (reader #px#"^[[:space:]]*(HTTP/([0-9]+)\\.([0-9]+))" 1 2 3))
+(define uri
+  ;; TODO - formal regex for URI
+  (reader #px#"^([[:graph:]]+)"))
 
-(define read-header
-  (reader #px#"(?m:^([\x21\x23-\x27\x2A\x2B\x2D\x2E\x30-\x39\x41-\x5A\x5E-\x7A\x7C\x7E]+):\
-[[:space:]]*(.*?)[[:space:]]*$)" 1 2))
+(define http-version
+  ;; RFC 2512, section 3.1
+  (reader #px#"^HTTP/([[:digit:]]+)\\.([[:digit:]]+)"))

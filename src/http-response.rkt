@@ -13,13 +13,19 @@
 
 (provide
  (contract-out
+
   ;; Converts an HTTP response to a formatted response string.
   [http-response->bytes (-> http-response? bytes?)]
+
   ;; Generates a 200 OK response.
   [http-response-ok (->* (bytes?) (headers?) http-response?)]
+
   ;; Generates a 200 OK response.
+  [http-response-ok/utf-8 (->* (string?) (headers?) http-response?)]
+
   ;; Generates a 400 Bad Request response.
   [http-response-bad-request (->* () (headers?) http-response?)]
+
   ;; Struct representing an HTTP response.
   [struct http-response ([status-code (integer-in 100 599)]
                          [reason string?]

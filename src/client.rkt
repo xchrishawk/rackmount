@@ -10,6 +10,8 @@
 
 ;; -- Requires --
 
+(require "http-request.rkt")
+(require "http-response.rkt")
 (require "log.rkt")
 
 ;; -- Provides --
@@ -25,7 +27,12 @@
 (struct client-info (state
                      identifier
                      input-port
-                     output-port)
+                     output-port
+                     request-method
+                     request-uri
+                     request-version-major
+                     request-version-minor
+                     response)
   #:transparent)
 
 ;; -- Public Procedures --
@@ -60,36 +67,49 @@
     [else (error "Invalid state!" (client-info-state client))]))
 
 (define (handle-start client)
-  (update-client-state client 'get-request-line))
+  (update-client client 'get-request-line))
 
 (define (handle-get-request-line client)
   (let ([line (read-line-from-client client)])
-    (if line
-        (begin
-          (displayln line)
-          (update-client-state client 'get-header))
-        (update-client-state client 'done))))
+    (match (parse-request-line line)
+      ;; Request line is valid
+      [(list (? string? method)
+             (? string? uri)
+             (? exact-nonnegative-integer? version-major)
+             (? exact-nonnegative-integer? version-minor))
+       (update-client client
+                      'get-header
+                      [request-method method]
+                      [request-uri uri]
+                      [request-version-major version-major]
+                      [request-version-minor version-minor])]
+      ;; Request line is invalid
+      [else
+       (update-client client
+                      'send-response
+                      (response (http-response-bad-request)))])))
 
 (define (handle-get-header client)
-  (update-client-state client 'get-body))
+  (update-client client 'get-body))
 
 (define (handle-get-body client)
-  (update-client-state client 'process-request))
+  (update-client client 'process-request))
 
 (define (handle-process-request client)
-  (update-client-state client 'send-response))
+  (update-client client 'send-response))
 
 (define (handle-send-response client)
-  (update-client-state client 'done))
+  (let ([output-port (client-info-output-port client)]
+        [response-bytes (http-response->bytes (client-info-response client))])
+    (write-bytes response-bytes output-port)
+    (flush-output output-port))
+  (update-client client 'done))
 
 ;; -- Private Procedures (Helpers) --
 
 ;; Create a new client-info struct with the specified values.
 (define (make-client-info identifier input-port output-port)
-  (client-info 'start
-               identifier
-               input-port
-               output-port))
+  (client-info 'start identifier input-port output-port #f #f #f #f #f))
 
 ;; Create a new client-info struct with basic data copied from the specified struct.
 (define (reset-client-info client)
@@ -111,11 +131,23 @@
        (match (thread-receive)
          ['shutdown #f])])))
 
-;; Returns a copy of the specified client-info struct with the state updated.
-(define (update-client-state client state)
-  (client-log client "State is now: ~A" state)
-  (struct-copy client-info client [state state]))
-
 ;; Local logging procedure.
 (define (client-log client fmt . v)
   (apply rackmount-log "Client" (client-info-identifier client) fmt v))
+
+;; -- Macros --
+
+;; Updates a client's state, and optionally any number of fields.
+(define-syntax (update-client stx)
+  (syntax-case stx ()
+    [(_ client state (field value) ...)
+     (let* ([field-clauses (map list
+                                (syntax-e #'(field ...))
+                                (syntax-e #'(value ...)))]
+            [result `(begin
+                       (client-log ,#'client "State is now: ~A" ,#'state)
+                       (struct-copy client-info
+                                    ,#'client
+                                    (state ,#'state)
+                                    ,@field-clauses))])
+       (datum->syntax stx result))]))
