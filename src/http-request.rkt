@@ -19,7 +19,15 @@
   ;;
   ;; Returns either a list of (method uri major-version minor-version), or #f if
   ;; the request line could not be successfully parsed.
-  [parse-request-line (-> string? (or/c list? false?))]))
+  [parse-request-line (-> string? (or/c list? false?))]
+
+  ;; Parses a header line.
+  ;;
+  ;; Returns one of the following:
+  ;; - A list of (header-name header-value) if a header was parsed
+  ;; - The no-more-headers symbol if the line is empty
+  ;; - #f if the line is not empty, but no header could be parsed
+  [parse-header-line (-> string? (or/c list? 'no-more-headers false?))]))
 
 ;; -- Public Procedures --
 
@@ -33,6 +41,16 @@
     (if (and method uri major-version minor-version)
         (list method uri major-version minor-version)
         #f)))
+
+(define (parse-header-line line-string)
+  (if (zero? (string-length line-string))
+      'no-more-headers
+      (let* ([line-port (open-input-string line-string)]
+             [header-name (read-from line-port token)]
+             [header-value (read-from line-port header-value)])
+        (if (and header-name header-value)
+            (list header-name header-value)
+            #f))))
 
 ;; -- Private Utility (Read Primitives) --
 
@@ -69,5 +87,9 @@
   (reader #px#"^([[:graph:]]+)"))
 
 (define http-version
-  ;; RFC 2512, section 3.1
+  ;; RFC 2612, section 3.1
   (reader #px#"^HTTP/([[:digit:]]+)\\.([[:digit:]]+)"))
+
+(define header-value
+  ;; RFC 2612, section 4.2
+  (reader #px#"(?m:^:[[:space:]]*(.*?)[[:space:]]*$)"))

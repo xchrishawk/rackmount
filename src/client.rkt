@@ -12,6 +12,7 @@
 
 (require "http-request.rkt")
 (require "http-response.rkt")
+(require "hypertext.rkt")
 (require "log.rkt")
 
 ;; -- Provides --
@@ -32,6 +33,8 @@
                      request-uri
                      request-version-major
                      request-version-minor
+                     request-headers
+                     request-body
                      response)
   #:transparent)
 
@@ -71,32 +74,63 @@
 
 (define (handle-get-request-line client)
   (let ([line (read-line-from-client client)])
-    (match (parse-request-line line)
-      ;; Request line is valid
-      [(list (? string? method)
-             (? string? uri)
-             (? exact-nonnegative-integer? version-major)
-             (? exact-nonnegative-integer? version-minor))
-       (update-client client
-                      'get-header
-                      [request-method method]
-                      [request-uri uri]
-                      [request-version-major version-major]
-                      [request-version-minor version-minor])]
-      ;; Request line is invalid
-      [else
-       (update-client client
-                      'send-response
-                      (response (http-response-bad-request)))])))
+    (if line
+        ;; Got a line from the client
+        (match (parse-request-line line)
+          ;; Request line is valid
+          [(list (? string? method)
+                 (? string? uri)
+                 (? exact-nonnegative-integer? version-major)
+                 (? exact-nonnegative-integer? version-minor))
+           (update-client client
+                          'get-header
+                          [request-method method]
+                          [request-uri uri]
+                          [request-version-major version-major]
+                          [request-version-minor version-minor])]
+          ;; Request line is invalid
+          [else
+           (update-client client
+                          'send-response
+                          [response (http-response-bad-request)])])
+        ;; No line - drop connection
+        (update-client client 'done))))
 
 (define (handle-get-header client)
-  (update-client client 'get-body))
+  (let ([line (read-line-from-client client)])
+    (if line
+        ;; Got a line from the client
+        (match (parse-header-line line)
+          ;; Header line is valid and contains data
+          [(list (? string? header-name)
+                 (? string? header-value))
+           (update-client client
+                          'get-header
+                          [request-headers
+                           (let ([prev-headers (client-info-request-headers client)])
+                             (if prev-headers
+                                 (hash-set prev-headers header-name header-value)
+                                 (hash header-name header-value)))])]
+          ;; Header line is valid and is empty, signifying end of headers
+          ['no-more-headers
+           (update-client client 'get-body)]
+          ;; Header line is invalid
+          [else
+           (update-client client 'send-response [response (http-response-bad-request)])])
+        ;; No line - drop connection
+        (update-client client 'done))))
 
 (define (handle-get-body client)
+  ;; TODO - skip for now
   (update-client client 'process-request))
 
 (define (handle-process-request client)
-  (update-client client 'send-response))
+  ;; TODO - dummy response
+  (update-client client
+                 'send-response
+                 [response (http-response-ok/utf-8
+                            (hypertext
+                             (html "Hello!")))]))
 
 (define (handle-send-response client)
   (let ([output-port (client-info-output-port client)]
@@ -109,7 +143,7 @@
 
 ;; Create a new client-info struct with the specified values.
 (define (make-client-info identifier input-port output-port)
-  (client-info 'start identifier input-port output-port #f #f #f #f #f))
+  (client-info 'start identifier input-port output-port #f #f #f #f #f #f #f))
 
 ;; Create a new client-info struct with basic data copied from the specified struct.
 (define (reset-client-info client)
@@ -145,7 +179,8 @@
                                 (syntax-e #'(field ...))
                                 (syntax-e #'(value ...)))]
             [result `(begin
-                       (client-log ,#'client "State is now: ~A" ,#'state)
+                       (when (not (equal? ,#'state (client-info-state ,#'client)))
+                         (client-log ,#'client "State is now: ~A" ,#'state))
                        (struct-copy client-info
                                     ,#'client
                                     (state ,#'state)
