@@ -168,14 +168,6 @@
 
 ;; -- Private Procedures (Logging) --
 
-;; Logs a request from the client.
-(define (client-log-request client)
-  (void))
-
-;; Logs a response to the client.
-(define (client-log-response client)
-  (void))
-
 ;; Local logging procedure.
 (define (client-log client fmt . v)
   (apply rackmount-log "Client" (client-info-identifier client) fmt v))

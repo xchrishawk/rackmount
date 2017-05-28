@@ -12,6 +12,7 @@
 ;; -- Requires --
 
 (require racket/generator)
+(require "client-task.rkt")
 (require "log.rkt")
 (require "utility.rkt")
 (require "worker.rkt")
@@ -67,9 +68,12 @@
         (cond
           ;; Received a new client connection
           [(equal? evt listener)
-           (let-values ([(identifier) (format "Client ~A" (client-id-generator))]
-                        [(input-port output-port) (tcp-accept listener)])
-             (workers-queue-task workers (list 'client identifier input-port output-port)))
+           (let*-values ([(identifier) (format "Client ~A" (client-id-generator))]
+                         [(input-port output-port) (tcp-accept listener)]
+                         [(task-spec) (client-task-spec identifier
+                                                        input-port
+                                                        output-port)])
+             (workers-queue-task workers task-spec))
            (loop)]
           ;; Received break - shut down
           [(equal? evt 'break)

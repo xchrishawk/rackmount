@@ -269,14 +269,12 @@
   ;; Gets a task from the specified task spec.
   (define (task-from-task-spec task-spec)
     (match task-spec
-      ;; Client connected
-      [(list 'client
-             (? string? identifier)
-             (? input-port? input-port)
-             (? output-port? output-port))
-       (make-client-task identifier input-port output-port)]
+      ;; Client request
+      [(? client-task-spec? spec) (client-task spec)]
       ;; Don't know what this is - ignore it
-      [else #f]))
+      [else
+       (worker-log "WARNING: Received request for unrecognized task!")
+       #f]))
 
   ;; Logs an event to this worker's category.
   (define (worker-log fmt . v)

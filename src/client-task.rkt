@@ -18,29 +18,36 @@
 
 (provide
  (contract-out
-  ;; Creates a new client task object.
-  [make-client-task (-> string? input-port? output-port? task?)]))
+
+  ;; Creates a client task spec using the specified values.
+  [client-task-spec (-> string? input-port? output-port? client-task-spec?)]
+
+  ;; Predicate returning #t if the specified value is a client task spec.
+  [client-task-spec? (-> any/c boolean?)]
+
+  ;; Creates a new client task object from the specified task spec.
+  [client-task (-> client-task-spec? task?)]))
 
 ;; -- Structs --
 
-(struct client-task (thread identifier input-port output-port)
+(struct opaque-client-task (thread identifier input-port output-port)
   #:mutable
   #:methods gen:task
   [;; Starts the task.
    (define (gen-task-start task)
-     (let ([thd (thread (λ () (client-proc (client-task-identifier task)
-                                           (client-task-input-port task)
-                                           (client-task-output-port task))))])
-       (set-client-task-thread! task thd)))
+     (let ([thd (thread (λ () (client-proc (opaque-client-task-identifier task)
+                                           (opaque-client-task-input-port task)
+                                           (opaque-client-task-output-port task))))])
+       (set-opaque-client-task-thread! task thd)))
 
    ;; Task was rejected - close the ports.
    (define (gen-task-reject task)
-     (close-input-port (client-task-input-port task))
-     (close-output-port (client-task-output-port task)))
+     (close-input-port (opaque-client-task-input-port task))
+     (close-output-port (opaque-client-task-output-port task)))
 
    ;; Cancels the task and optionally waits for thread to terminate
    (define (gen-task-cancel task #:synchronous [synchronous #t])
-     (let ([thd (client-task-thread task)])
+     (let ([thd (opaque-client-task-thread task)])
        (if thd
            (begin
              (thread-send thd 'shutdown)
@@ -50,12 +57,23 @@
 
    ;; Returns an event ready when the task has completed.
    (define (gen-task-completed-evt task)
-     (let ([thd (client-task-thread task)])
+     (let ([thd (opaque-client-task-thread task)])
        (if thd
            (wrap-evt thd (λ (thd) task))
            (error "Task has not been started!"))))])
 
 ;; -- Public Procedures --
 
-(define (make-client-task identifier input-port output-port)
-  (client-task #f identifier input-port output-port))
+(define (client-task-spec identifier input-port output-port)
+  (list 'client-task identifier input-port output-port))
+
+(define (client-task-spec? x)
+  (match x
+    [(list 'client-task string? input-port? output-port?) #t]
+    [else #f]))
+
+(define (client-task spec)
+  (opaque-client-task #f
+                      (second spec)
+                      (third spec)
+                      (fourth spec)))
