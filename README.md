@@ -8,12 +8,14 @@ Recognized command line arguments:
 
 **Required**
 
+- `-j`, `--workers`: Set the number of worker places to create.
 - `-w`, `--working-dir`: Set the working directory for the server.
 - `-p`, `--port`: Set the port number to bind to.
 
 **Optional**
 
-- `-h`, `--hostname`: Set the hostname of the interface to bind to. If not set, the server will bind to any interface.
+- `-i`, `--interface`: Set the hostname of the interface to bind to. If not set, the server will bind to any available interface.
+- `-z`, `--client-timeout`: Sets a client timeout, in seconds. Each HTTP transaction must complete in less than this period of time, otherwise the connection will be dropped.
 
 ## Author
 

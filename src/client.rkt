@@ -158,7 +158,24 @@
     (when (not disposition)
       (error "Disposition must be set prior to disconnecting!"))
     (close-output-port (client-info-output-port client))
-    (sleep) ; wtf
+    ;;
+    ;; I don't know why this (sleep) call is necessary. If it's not here, the
+    ;; worker place will lock up and stop receiving syncable events if a client
+    ;; times out. This can be reproduced with the following procedure:
+    ;;
+    ;; - Comment out the (sleep) call below
+    ;; - Launch the server with a 5 second client timeout
+    ;; - Connect to the server using netcat, wait for 5+ seconds
+    ;;
+    ;; You will see that the connection logs as dropped, however, any further
+    ;; calls to (sync) will never actually result in an event being received.
+    ;; This causes the *main* thread to lock the next time it tries to poll the
+    ;; worker to get the number of active tasks.
+    ;;
+    ;; This was observed with Racket 6.8, so assuming it's some type of runtime
+    ;; bug, it should be rechecked with future versions of Racket.
+    ;;
+    (sleep)
     (close-input-port (client-info-input-port client))
     (client-log client "Connection terminated, disposition: ~A" disposition))
   (update-client client 'done))
