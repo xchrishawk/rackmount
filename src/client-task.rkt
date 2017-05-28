@@ -20,7 +20,12 @@
  (contract-out
 
   ;; Creates a client task spec using the specified values.
-  [client-task-spec (-> string? input-port? output-port? client-task-spec?)]
+  [client-task-spec (-> string?					; client identifier
+                        input-port?				; input port
+                        output-port?				; output port
+                        path-string?				; working directory
+                        (or/c (and/c number? positive?) false?)	; client timeout
+                        client-task-spec?)]
 
   ;; Predicate returning #t if the specified value is a client task spec.
   [client-task-spec? (-> any/c boolean?)]
@@ -30,14 +35,21 @@
 
 ;; -- Structs --
 
-(struct opaque-client-task (thread identifier input-port output-port)
+(struct opaque-client-task (thread
+                            identifier
+                            input-port
+                            output-port
+                            working-dir
+                            timeout)
   #:mutable
   #:methods gen:task
   [;; Starts the task.
    (define (gen-task-start task)
      (let ([thd (thread (λ () (client-proc (opaque-client-task-identifier task)
                                            (opaque-client-task-input-port task)
-                                           (opaque-client-task-output-port task))))])
+                                           (opaque-client-task-output-port task)
+                                           (opaque-client-task-working-dir task)
+                                           (opaque-client-task-timeout task))))])
        (set-opaque-client-task-thread! task thd)))
 
    ;; Task was rejected - close the ports.
@@ -64,16 +76,19 @@
 
 ;; -- Public Procedures --
 
-(define (client-task-spec identifier input-port output-port)
-  (list 'client-task identifier input-port output-port))
+(define (client-task-spec identifier input-port output-port working-dir client-timeout)
+  (list 'client-task identifier input-port output-port working-dir client-timeout))
 
 (define (client-task-spec? x)
   (match x
-    [(list 'client-task string? input-port? output-port?) #t]
+    [(list 'client-task
+           string?
+           input-port?
+           output-port?
+           path-string?
+           (and number? positive?))
+     #t]
     [else #f]))
 
 (define (client-task spec)
-  (opaque-client-task #f
-                      (second spec)
-                      (third spec)
-                      (fourth spec)))
+  (apply opaque-client-task #f (rest spec)))

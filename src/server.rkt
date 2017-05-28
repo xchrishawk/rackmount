@@ -27,9 +27,10 @@
 
   ;; Struct containing server configuration.
   [struct server-config ([worker-count exact-positive-integer?]
-                         [working-dir string?]
+                         [working-dir path-string?]
                          [interface (or/c string? false?)]
                          [port-number port-number?]
+                         [client-timeout (or/c (and/c number? positive?) false?)]
                          [listener-reusable boolean?]
                          [listener-max-wait exact-nonnegative-integer?])]))
 
@@ -39,6 +40,7 @@
                        working-dir
                        interface
                        port-number
+                       client-timeout
                        listener-reusable
                        listener-max-wait)
   #:prefab)
@@ -46,7 +48,7 @@
 ;; -- Public Procedures --
 
 (define (server-run config)
-  (server-log "Launching server...")
+  (server-log (startup-message config))
   (let (;; Client ID generator
         [client-id-generator (sequence->generator (in-naturals))]
         ;; Launch worker places
@@ -56,9 +58,7 @@
                               (server-config-listener-max-wait config)
                               (server-config-listener-reusable config)
                               (server-config-interface config))])
-    (server-log "Listener launched on interface ~A, port ~A."
-                (or (server-config-interface config) "<any>")
-                (server-config-port-number config))
+    (server-log "Listener launched...")
     ;; Main loop
     (let loop ()
       (let ([evt (with-handlers ([exn:break? (λ (ex) 'break)])
@@ -70,7 +70,9 @@
                          [(input-port output-port) (tcp-accept listener)]
                          [(task-spec) (client-task-spec identifier
                                                         input-port
-                                                        output-port)])
+                                                        output-port
+                                                        (server-config-working-dir config)
+                                                        (server-config-client-timeout config))])
              (workers-queue-task workers task-spec))
            (loop)]
           ;; Received break - shut down
@@ -85,6 +87,21 @@
   (server-log "Server terminated."))
 
 ;; -- Private Procedures --
+
+(define (startup-message config)
+  (let ([output (open-output-string)])
+    (parameterize ([current-output-port output])
+      (display "Launching server with configuration:")
+      (define (add key value [default #f])
+        (display (format "\n- ~A: ~A" key (or value default))))
+      (add "Worker Count" (server-config-worker-count config))
+      (add "Working Directory" (server-config-working-dir config))
+      (add "Interface" (server-config-interface config) "(any)")
+      (add "Port Number" (server-config-port-number config))
+      (add "Client Timeout" (server-config-client-timeout config) "(none)")
+      (add "Listener Reusable" (server-config-listener-reusable config))
+      (add "Listener Max Waiting" (server-config-listener-max-wait config)))
+    (get-output-string output)))
 
 (define server-log
   (create-local-log "Server"))

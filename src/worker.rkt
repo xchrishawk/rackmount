@@ -205,8 +205,9 @@
        ;; Wait for next event
        (let* ([task-list (set->list tasks)]
               [task-completed-evts (map gen-task-completed-evt task-list)]
-              [syncable-evts (cons (worker-channel) task-completed-evts)])
-         (match (apply sync syncable-evts)
+              [syncable-evts (cons (worker-channel) task-completed-evts)]
+              [evt (apply sync syncable-evts)])
+         (match evt
 
            ;; Return immediately without waiting for tasks to complete
            ['terminate-immediately

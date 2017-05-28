@@ -23,7 +23,12 @@
  (contract-out
 
   ;; Runs the main client handling procedure.
-  [client-proc (-> string? input-port? output-port? any)]))
+  [client-proc (-> string?
+                   input-port?
+                   output-port?
+                   path-string?
+                   (or/c (and/c number? positive?) false?)
+                   any)]))
 
 ;; -- Structs --
 
@@ -31,6 +36,9 @@
                      identifier
                      input-port
                      output-port
+                     working-dir
+                     timeout
+                     startup-time
                      request-method
                      request-uri
                      request-version-major
@@ -43,8 +51,8 @@
 
 ;; -- Public Procedures --
 
-(define (client-proc identifier input-port output-port)
-  (let ([client (make-client-info identifier input-port output-port)])
+(define (client-proc identifier input-port output-port working-dir timeout)
+  (let ([client (make-client-info identifier input-port output-port working-dir timeout)])
     (client-loop client)))
 
 ;; -- Private Procedures (State Machine) --
@@ -149,22 +157,36 @@
   (let ([disposition (client-info-disposition client)])
     (when (not disposition)
       (error "Disposition must be set prior to disconnecting!"))
-    (close-input-port (client-info-input-port client))
     (close-output-port (client-info-output-port client))
+    (sleep) ; wtf
+    (close-input-port (client-info-input-port client))
     (client-log client "Connection terminated, disposition: ~A" disposition))
   (update-client client 'done))
 
 ;; -- Private Procedures (Client Struct Management) --
 
 ;; Create a new client-info struct with the specified values.
-(define (make-client-info identifier input-port output-port)
-  (client-info 'start identifier input-port output-port #f #f #f #f #f #f #f #f))
+(define (make-client-info identifier
+                          input-port
+                          output-port
+                          working-dir
+                          timeout)
+  (client-info 'start
+               identifier
+               input-port
+               output-port
+               working-dir
+               timeout
+               (current-inexact-milliseconds)
+               #f #f #f #f #f #f #f #f))
 
 ;; Create a new client-info struct with basic data copied from the specified struct.
 (define (reset-client-info client)
   (make-client-info (client-info-identifier client)
                     (client-info-input-port client)
-                    (client-info-output-port client)))
+                    (client-info-output-port client)
+                    (client-info-working-dir client)
+                    (client-info-timeout client)))
 
 ;; -- Private Procedures (Logging) --
 
@@ -179,17 +201,24 @@
 ;; - client-disconnected if the client disconnected from the remote end
 ;; - worker-terminated if the worker is terminating
 (define (get-line-helper client)
-  (let ([evt (sync (read-line-evt (client-info-input-port client) 'any)
-                   (thread-receive-evt))])
+  (let* ([line-evt (read-line-evt (client-info-input-port client) 'any)]
+         [message-evt (thread-receive-evt)]
+         [timeout-evt (let ([timeout (client-info-timeout client)])
+                        (if timeout (alarm-evt (+ (client-info-startup-time client) timeout)) #f))]
+         [syncable-evts (filter (not/c false?) (list line-evt message-evt timeout-evt))]
+         [evt (apply sync syncable-evts)])
     (match evt
       ;; Client sent a line of text.
       [(? string? line) line]
       ;; Client disconnected from remote end.
       [(? (λ (evt) (equal? evt eof)) _) 'client-disconnected]
       ;; Received shutdown command
-      [(? (λ (evt) (equal? evt (thread-receive-evt))) _)
+      [(? (λ (evt) (equal? evt message-evt)) _)
        (match (thread-receive)
-         ['shutdown 'worker-terminated])])))
+         ['shutdown 'worker-terminated])]
+      ;; Connection timed out
+      [(? (λ (evt) (equal? evt timeout-evt)) _)
+       'timed-out])))
 
 ;; -- Macros --
 
@@ -219,8 +248,6 @@
                         [(? string? ,#'var)
                          ,#'body0
                          ,@#'(body ...)]
-                        [(? (λ (x) (or (equal? x 'client-disconnected)
-                                       (equal? x 'worker-terminated)))
-                            ,#'disp-var)
+                        [(? symbol? ,#'disp-var)
                          (update-client ,#'client 'disconnect [disposition ,#'disp-var])])])
          (datum->syntax stx result)))]))

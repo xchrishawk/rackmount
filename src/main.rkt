@@ -13,10 +13,11 @@
 
 ;; -- Types --
 
-(struct arguments (worker-count
-                   working-dir
-                   interface
-                   port-number)
+(struct arguments (worker-count		; number of worker places to launch
+                   working-dir		; working directory for server
+                   interface		; host name of interface to bind to
+                   port-number		; port number to bind to
+                   client-timeout)	; max time to wait for data from client
   #:transparent)
 
 ;; -- Main Procedure --
@@ -29,6 +30,8 @@
                                  (arguments-working-dir args)
                                  (arguments-interface args)
                                  (arguments-port-number args)
+                                 (let ([timeout (arguments-client-timeout args)])
+                                   (if timeout (* timeout 1000.0) #f))
                                  #t	; reusable
                                  4)])	; max wait
       (server-run config))))
@@ -40,9 +43,10 @@
   (arg-parser
    arguments
    (arguments 1		; worker-count: default = 1
-              #f	; working dir: user must set
+              #f	; working-dir: user must set
               #f	; interface: default = #f (any)
-              #f)	; port number: user must set
+              #f	; port-number: user must set
+              #f)	; client-timeout: default = #f (no timeout)
    (var ("-j" "--workers")
         worker-count
         (string->number-or-error (integer-in 1 64) "job count"))
@@ -52,7 +56,10 @@
         interface)
    (var ("-p" "--port")
         port-number
-        (string->number-or-error port-number? "port number"))))
+        (string->number-or-error port-number? "port number"))
+   (var ("-z" "--client-timeout")
+        client-timeout
+        (string->number-or-error positive? "client timeout"))))
 
 ;; Either converts a string to a number or raises a user error.
 (define (string->number-or-error predicate argument)
