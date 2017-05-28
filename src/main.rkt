@@ -14,7 +14,6 @@
 ;; -- Types --
 
 (struct arguments (worker-count
-                   max-thread-count
                    working-dir
                    interface
                    port-number)
@@ -27,7 +26,6 @@
     (main-log "Launched with arguments \"~A\"" (string-join args-list " "))
     (validate-arguments args)
     (let ([config (server-config (arguments-worker-count args)
-                                 (arguments-max-thread-count args)
                                  (arguments-working-dir args)
                                  (arguments-interface args)
                                  (arguments-port-number args)
@@ -42,16 +40,12 @@
   (arg-parser
    arguments
    (arguments 1		; worker-count: default = 1
-              1		; max-thread-count: default = 1
               #f	; working dir: user must set
               #f	; interface: default = #f (any)
               #f)	; port number: user must set
    (var ("-j" "--workers")
         worker-count
         (string->number-or-error (integer-in 1 64) "job count"))
-   (var ("-t" "--max-threads")
-        max-thread-count
-        (string->number-or-error (integer-in 1 64) "max thread count"))
    (var ("-w" "--working-dir")
         working-dir)
    (var ("-i" "--interface")

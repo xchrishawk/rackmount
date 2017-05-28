@@ -27,7 +27,6 @@
 
   ;; Struct containing server configuration.
   [struct server-config ([worker-count exact-positive-integer?]
-                         [max-thread-count exact-positive-integer?]
                          [working-dir string?]
                          [interface (or/c string? false?)]
                          [port-number port-number?]
@@ -37,13 +36,12 @@
 ;; -- Structs --
 
 (struct server-config (worker-count
-                       max-thread-count
                        working-dir
                        interface
                        port-number
                        listener-reusable
                        listener-max-wait)
-  #:transparent)
+  #:prefab)
 
 ;; -- Public Procedures --
 
