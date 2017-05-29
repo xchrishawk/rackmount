@@ -48,44 +48,8 @@
 ;; -- Public Procedures --
 
 (define (server-run config)
-  (server-log-info (startup-message config))
-  (let (;; Client ID generator
-        [client-id-generator (sequence->generator (in-naturals))]
-        ;; Launch worker places
-        [workers (make-workers (server-config-worker-count config))]
-        ;; Launch listener
-        [listener (tcp-listen (server-config-port-number config)
-                              (server-config-listener-max-wait config)
-                              (server-config-listener-reusable config)
-                              (server-config-interface config))])
-    (server-log-trace "Listener launched...")
-    ;; Main loop
-    (let loop ()
-      (let ([evt (with-handlers ([exn:break? (λ (ex) 'break)])
-                   (sync/enable-break listener))])
-        (cond
-          ;; Received a new client connection
-          [(equal? evt listener)
-           (let*-values ([(identifier) (format "Client ~A" (client-id-generator))]
-                         [(input-port output-port) (tcp-accept listener)]
-                         [(task-spec) (client-task-spec identifier
-                                                        input-port
-                                                        output-port
-                                                        (server-config-working-dir config)
-                                                        (server-config-client-timeout config))])
-             (server-log-trace "New client (~A) connected, queueing task..." identifier)
-             (workers-queue-task workers task-spec))
-           (loop)]
-          ;; Received break - shut down
-          [(equal? evt 'break)
-           (server-log-debug "Received break, terminating server...")]
-          ;; Unknown event?
-          [else
-           (server-log-error "Received unknown event (~A). Ignoring..." evt)])))
-    ;; Shut down
-    (tcp-close listener)
-    (workers-terminate workers #:finish-tasks #f))
-  (server-log-info "Server terminated."))
+  ;; TODO
+  (void))
 
 ;; -- Private Procedures --
 
