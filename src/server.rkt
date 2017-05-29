@@ -48,7 +48,7 @@
 ;; -- Public Procedures --
 
 (define (server-run config)
-  (server-log (startup-message config))
+  (server-log-info (startup-message config))
   (let (;; Client ID generator
         [client-id-generator (sequence->generator (in-naturals))]
         ;; Launch worker places
@@ -58,7 +58,7 @@
                               (server-config-listener-max-wait config)
                               (server-config-listener-reusable config)
                               (server-config-interface config))])
-    (server-log "Listener launched...")
+    (server-log-trace "Listener launched...")
     ;; Main loop
     (let loop ()
       (let ([evt (with-handlers ([exn:break? (λ (ex) 'break)])
@@ -73,18 +73,19 @@
                                                         output-port
                                                         (server-config-working-dir config)
                                                         (server-config-client-timeout config))])
+             (server-log-trace "New client (~A) connected, queueing task..." identifier)
              (workers-queue-task workers task-spec))
            (loop)]
           ;; Received break - shut down
           [(equal? evt 'break)
-           (server-log "Received break, terminating server...")]
+           (server-log-debug "Received break, terminating server...")]
           ;; Unknown event?
           [else
-           (server-log "Received unknown event (~A). Ignoring..." evt)])))
+           (server-log-error "Received unknown event (~A). Ignoring..." evt)])))
     ;; Shut down
     (tcp-close listener)
     (workers-terminate workers #:finish-tasks #f))
-  (server-log "Server terminated."))
+  (server-log-info "Server terminated."))
 
 ;; -- Private Procedures --
 
@@ -103,5 +104,4 @@
       (add "Listener Max Waiting" (server-config-listener-max-wait config)))
     (get-output-string output)))
 
-(define server-log
-  (create-local-log "Server"))
+(define-local-log server "Server")

@@ -83,7 +83,7 @@
     [else (error "Invalid state!" (client-info-state client))]))
 
 (define (handle-start client)
-  (client-log client "Client connected...")
+  (client-log-info (client-info-identifier client) "Client connected.")
   (update-client client 'get-request-line))
 
 (define (handle-get-request-line client)
@@ -177,7 +177,9 @@
     ;;
     (sleep)
     (close-input-port (client-info-input-port client))
-    (client-log client "Connection terminated, disposition: ~A" disposition))
+    (client-log-info (client-info-identifier client)
+                     "Connection terminated, disposition: ~A."
+                     disposition))
   (update-client client 'done))
 
 ;; -- Private Procedures (Client Struct Management) --
@@ -208,8 +210,7 @@
 ;; -- Private Procedures (Logging) --
 
 ;; Local logging procedure.
-(define (client-log client fmt . v)
-  (apply rackmount-log "Client" (client-info-identifier client) fmt v))
+(define-local-log client "Client" #:with-identifier)
 
 ;; -- Private Procedures (Macro Helpers) --
 
@@ -260,7 +261,9 @@
                                 (syntax-e #'(value ...)))]
             [result `(begin
                        (when (not (equal? ,#'state (client-info-state ,#'client)))
-                         (client-log ,#'client "State is now: ~A" ,#'state))
+                         (client-log-trace (client-info-identifier ,#'client)
+                                           "State is now: ~A"
+                                           ,#'state))
                        (struct-copy client-info
                                     ,#'client
                                     (state ,#'state)

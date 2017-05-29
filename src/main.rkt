@@ -17,24 +17,26 @@
                    working-dir		; working directory for server
                    interface		; host name of interface to bind to
                    port-number		; port number to bind to
-                   client-timeout)	; max time to wait for data from client
+                   client-timeout	; max time to wait for data from client
+                   log-level)		; minimum log level
   #:transparent)
 
 ;; -- Main Procedure --
 
 (define (main args-list)
   (let ([args (parse-arguments args-list)])
-    (main-log "Launched with arguments \"~A\"" (string-join args-list " "))
-    (validate-arguments args)
-    (let ([config (server-config (arguments-worker-count args)
-                                 (arguments-working-dir args)
-                                 (arguments-interface args)
-                                 (arguments-port-number args)
-                                 (let ([timeout (arguments-client-timeout args)])
-                                   (if timeout (* timeout 1000.0) #f))
-                                 #t	; reusable
-                                 4)])	; max wait
-      (server-run config))))
+    (parameterize ([rackmount-log-level (arguments-log-level args)])
+      (main-log-debug "Launched with arguments \"~A\"" (string-join args-list " "))
+      (validate-arguments args)
+      (let ([config (server-config (arguments-worker-count args)
+                                   (arguments-working-dir args)
+                                   (arguments-interface args)
+                                   (arguments-port-number args)
+                                   (let ([timeout (arguments-client-timeout args)])
+                                     (if timeout (* timeout 1000.0) #f))
+                                   #t	; reusable
+                                   4)])	; max wait
+        (server-run config)))))
 
 ;; -- Private Procedures --
 
@@ -46,7 +48,8 @@
               #f	; working-dir: user must set
               #f	; interface: default = #f (any)
               #f	; port-number: user must set
-              #f)	; client-timeout: default = #f (no timeout)
+              #f	; client-timeout: default = #f (no timeout)
+              5)	; log-level: default = 5 (trace)
    (var ("-j" "--workers")
         worker-count
         (string->number-or-error (integer-in 1 64) "job count"))
@@ -59,7 +62,10 @@
         (string->number-or-error port-number? "port number"))
    (var ("-z" "--client-timeout")
         client-timeout
-        (string->number-or-error positive? "client timeout"))))
+        (string->number-or-error positive? "client timeout"))
+   (var ("-l" "--log-level")
+        log-level
+        (string->number-or-error rackmount-log-level? "log level"))))
 
 ;; Either converts a string to a number or raises a user error.
 (define (string->number-or-error predicate argument)
@@ -83,8 +89,7 @@
       (raise-user-error "Port number not specified."))))
 
 ;; Logs an event to the "Main" category.
-(define main-log
-  (create-local-log "Main"))
+(define-local-log main "Main")
 
 ;; -- Main Module --
 

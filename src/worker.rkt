@@ -183,19 +183,23 @@
 
   ;; Main procedure.
   (define (main)
-    (worker-log "Worker launched, waiting for tasks...")
+    (worker-log-debug (worker-identifier)
+                      "Worker launched, waiting for tasks...")
     ;; Enter the main loop for this worker
     (let ([remaining-tasks (main-loop)])
 
       ;; Cancel any remaining tasks
       (when (not (null? remaining-tasks))
-        (worker-log "WARNING: Terminating ~A active tasks..." (length remaining-tasks))
+        (worker-log-warning (worker-identifier)
+                            "Terminating ~A active tasks..."
+                            (length remaining-tasks))
         (for ([task (in-list remaining-tasks)])
           (gen-task-cancel task #:synchronous #f))
         (apply sync (map gen-task-completed-evt remaining-tasks)))
 
       ;; Log shutdown
-      (worker-log "Worker terminated.")))
+      (worker-log-debug (worker-identifier)
+                        "Worker terminated.")))
 
   ;; Main loop - returns any active tasks left after shutdown.
   (define (main-loop)
@@ -211,7 +215,8 @@
 
            ;; Return immediately without waiting for tasks to complete
            ['terminate-immediately
-            (worker-log "Immediate termination requested.")
+            (worker-log-trace (worker-identifier)
+                              "Immediate termination requested.")
             tasks]
 
            ;; Wait for all tasks to complete normally, then terminate
@@ -219,11 +224,14 @@
             (cond
               ;; No tasks remaining, we can terminate immediately
               [(set-empty? tasks)
-               (worker-log "Normal termination requested - no active tasks.")
+               (worker-log-trace (worker-identifier)
+                                 "Normal termination requested - no active tasks.")
                tasks]
               ;; At least one task remaining, wait for all to complete
               [else
-               (worker-log "Normal termination requested - waiting on ~A tasks..." (set-count tasks))
+               (worker-log-trace (worker-identifier)
+                                 "Normal termination requested - waiting on ~A tasks..."
+                                 (set-count tasks))
                (loop tasks #t)])]
 
            ;; Request for number of active tasks - reply and keep looping
@@ -245,7 +253,9 @@
 
            ;; An unknown event? Log it and keep going...
            [else
-            (worker-log "WARNING: Received unknown event (~A) - ignoring and continuing...")
+            (worker-log-warning (worker-identifier)
+                                "Received unknown event (~A) - ignoring and continuing..."
+                                evt)
             (loop tasks terminating)])))))
 
   ;; Queues the specified task. Returns the new set of active tasks.
@@ -253,10 +263,13 @@
     (if terminating
         (begin
           (gen-task-reject task)
-          (worker-log "WARNING: Rejecting task because worker is terminating.")
+          (worker-log-warning (worker-identifier)
+                              "Rejecting task because worker is terminating.")
           tasks)
         (let ([new-tasks (set-add tasks task)])
-          (worker-log "Task started, ~A tasks now active." (set-count new-tasks))
+          (worker-log-trace (worker-identifier)
+                            "Task started, ~A tasks now active."
+                            (set-count new-tasks))
           (gen-task-start task)
           new-tasks)))
 
@@ -264,7 +277,9 @@
   (define (complete-task task tasks terminating)
     (let* ([new-tasks (set-remove tasks task)]
            [continue (not (and terminating (set-empty? new-tasks)))])
-      (worker-log "Task completed, ~A tasks now active." (set-count new-tasks))
+      (worker-log-trace (worker-identifier)
+                        "Task completed, ~A tasks now active."
+                        (set-count new-tasks))
       (values new-tasks continue)))
 
   ;; Gets a task from the specified task spec.
@@ -274,9 +289,9 @@
       [(? client-task-spec? spec) (client-task spec)]
       ;; Don't know what this is - ignore it
       [else
-       (worker-log "WARNING: Received request for unrecognized task!")
+       (worker-log-warning (worker-identifier)
+                           "Received request for unrecognized task!")
        #f]))
 
-  ;; Logs an event to this worker's category.
-  (define (worker-log fmt . v)
-    (apply rackmount-log "Worker" (worker-identifier) fmt v)))
+  ;; Local logging procedure.
+  (define-local-log worker "Worker" #:with-identifier))
