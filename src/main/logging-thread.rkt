@@ -46,11 +46,20 @@
                   (thread-receive-evt)
                   (λ (evt) (thread-receive)))
                  (log-event-dequeue-evt))
-      ;; Received shutdown event - stop looping
-      ['shutdown (void)]
-      ;; Received event - for now, just print it to the output port. Eventually
-      ;; this will get logged to a persistent store of some type.
+      ;; Received shutdown event - flush all remaining events then stop looping
+      ['shutdown
+       (let flush-all-loop ()
+         (let ([log-event (log-event-dequeue)])
+           (when log-event
+             (report-log-event log-event)
+             (flush-all-loop))))]
+      ;; Received event - report it
       [(? log-event? log-event)
-       (displayln (log-event->string log-event))
-       (newline)
+       (report-log-event log-event)
        (loop)])))
+
+;; Reports a log event. For now, just print it to the output port. Eventually they
+;; will get saved to some type of persistent store.
+(define (report-log-event log-event)
+  (displayln (log-event->string log-event))
+  (newline))

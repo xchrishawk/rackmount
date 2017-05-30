@@ -18,7 +18,6 @@
 ;; -- Requires --
 
 (require racket/async-channel)
-(require (for-syntax racket))
 (require (for-syntax racket/syntax))
 (require (for-syntax syntax/parse))
 (require (for-syntax "syntax.rkt"))
@@ -45,6 +44,10 @@
 
   ;; Enqueues an event into the logging queue.
   [log-event-enqueue (-> log-event? void?)]
+
+  ;; Immediately returns either the next log event available in the queue, or
+  ;; #f if there are no events available. Does not block.
+  [log-event-dequeue (-> (or/c log-event? false?))]
 
   ;; Returns a synchronizable event which is ready for synchronization any time
   ;; there is a log event available in the logging queue. The synchronization
@@ -73,7 +76,7 @@
 ;; -- Objects --
 
 (define minimum-log-event-level
-  (make-parameter 'info))
+  (make-parameter 'trace))
 
 ;; Lookup table for log levels.
 (define log-event-levels (hash 'critical (cons 0 "Critical")
@@ -91,6 +94,9 @@
 (define (log-event-enqueue log-event)
   (when (log-event-level-enabled? (log-event-level log-event))
     (async-channel-put log-event-queue log-event)))
+
+(define (log-event-dequeue)
+  (async-channel-try-get log-event-queue))
 
 (define (log-event-dequeue-evt)
   ;; we use wrap-event to avoid leaking a reference to the queue
@@ -156,14 +162,14 @@
          (define (make-log-fn name level)
            `(define (,name ,#'format-arg . ,#'v-arg)
               (log-event-enqueue (log-event (current-inexact-milliseconds)
-                                            ,level
+                                            (quote ,level)
                                             ,#'category
                                             #f
                                             (apply format ,#'format-arg ,#'v-arg)))))
          (define (make-log-identifier-fn name level)
            `(define (,name ,#'identifier-arg ,#'format-arg . ,#'v-arg)
               (log-event-enqueue (log-event (current-inexact-milliseconds)
-                                            ,level
+                                            (quote ,level)
                                             ,#'category
                                             ,#'identifier-arg
                                             (apply format ,#'format-arg ,#'v-arg)))))
@@ -185,7 +191,6 @@
                                ,(make-log-fn #'fn-log-info 'info)
                                ,(make-log-fn #'fn-log-debug 'debug)
                                ,(make-log-fn #'fn-log-trace 'trace)))])
-           (pretty-print result)
            (datum->syntax stx result))))]))
 
 ;; -- Tests --
