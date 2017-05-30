@@ -1,5 +1,5 @@
 ;;
-;; arg-parser.rkt
+;; arguments-parser.rkt
 ;; Chris Vig (chris@invictus.so)
 ;;
 ;; Defines a macro used to parse out a list of arguments into a struct.
@@ -15,11 +15,11 @@
 
 ;; -- Provides --
 
-(provide arg-parser)
+(provide arguments-parser)
 
 ;; -- Macros --
 
-(define-syntax (arg-parser stx)
+(define-syntax (arguments-parser stx)
   (let* ([syntax-datum (syntax->datum stx)]
          [struct-id (second syntax-datum)]
          [struct-expr (third syntax-datum)]
@@ -81,11 +81,11 @@
 
 (define (example args-list)
   (struct example-args (a b c) #:transparent)
-  (define parse (arg-parser example-args
-                            (example-args #f #f #f)
-                            (var ("-a" "--longnamefora") a)
-                            (var "-b" b string->number)
-                            (flag ("-c" "--longnameforc") c)))
+  (define parse (arguments-parser example-args
+                                  (example-args #f #f #f)
+                                  (var ("-a" "--longnamefora") a)
+                                  (var "-b" b string->number)
+                                  (flag ("-c" "--longnameforc") c)))
   (println (parse args-list)))
 
 (module+ main

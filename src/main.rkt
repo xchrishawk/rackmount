@@ -11,6 +11,7 @@
 
 ;; -- Requires --
 
+(require "main/arguments.rkt")
 (require "main/logging-thread.rkt")
 (require "util/logging.rkt")
 
@@ -22,29 +23,21 @@
   ;; Main entry point for the application.
   [main (-> (listof string?) any)]))
 
-;; -- Types --
-
-;; Struct representing the parsed command line arguments.
-(struct arguments (worker-count
-                   working-dir
-                   interface
-                   port-number
-                   client-timeout
-                   log-level)
-  #:transparent)
-
 ;; -- Public Procedures --
 
 (define (main args-list)
-  (let ([logging-thread (logging-thread-start)])
-    (main-log-debug "Application launched. Arguments: ~A" (string-join args-list))
-    (main-log-trace "Application running. Waiting for break...")
-    (wait-for-break)
-    (main-log-trace "Break received, terminating application...")
-    (logging-thread-stop logging-thread)))
+  (let* ([args (get-arguments args-list)])
+    (parameterize ([minimum-log-event-level (arguments-minimum-log-event-level args)])
+      (main-log-debug "Application launched. Arguments: ~A" (string-join args-list))
+      (let ([logging-thread (logging-thread-start)])
+        (main-log-trace "Application running. Waiting for break...")
+        (wait-for-break)
+        (main-log-trace "Break received, terminating application...")
+        (logging-thread-stop logging-thread)))))
 
 ;; -- Private Procedures --
 
+;; Waits for a break (CTRL-C).
 (define (wait-for-break)
   (with-handlers ([exn:break? void])
     (sync/enable-break never-evt)))
