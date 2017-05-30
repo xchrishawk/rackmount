@@ -67,7 +67,7 @@
                           (display "Listener active with configuration:" text)
                           (define (add item value)
                             (display (format "\n- ~A: ~A" item value) text))
-                          (add "Interface" (or (listener-thread-config-interface config) "(any"))
+                          (add "Interface" (or (listener-thread-config-interface config) "(any)"))
                           (add "Port Number" (listener-thread-config-port-number config))
                           (add "Reusable" (listener-thread-config-reusable config))
                           (add "Max Wait Count" (listener-thread-config-max-wait-count config))
