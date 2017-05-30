@@ -12,6 +12,7 @@
 ;; -- Requires --
 
 (require "main/arguments.rkt")
+(require "main/listener-thread.rkt")
 (require "main/logging-thread.rkt")
 (require "util/logging.rkt")
 
@@ -28,11 +29,21 @@
 (define (main args-list)
   (let* ([args (get-arguments args-list)])
     (parameterize ([minimum-log-event-level (arguments-minimum-log-event-level args)])
-      (main-log-debug "Application launched. Arguments: ~A" (string-join args-list))
-      (let ([logging-thread (logging-thread-start)])
-        (main-log-trace "Application running. Waiting for break...")
+      (main-log-info "Starting with arguments: ~A" (string-join args-list))
+      (let* ([logging-thread
+              (logging-thread-start)]
+             [listener-thread-config
+              (listener-thread-config (arguments-working-dir args)
+                                      (arguments-interface args)
+                                      (arguments-port-number args)
+                                      4    ; max wait count
+                                      #t)] ; reusable
+             [listener-thread
+              (listener-thread-start listener-thread-config)])
+        (main-log-debug "Startup complete. Waiting for break...")
         (wait-for-break)
-        (main-log-trace "Break received, terminating application...")
+        (main-log-info "Break received, terminating application...")
+        (listener-thread-stop listener-thread)
         (logging-thread-stop logging-thread)))))
 
 ;; -- Private Procedures --
