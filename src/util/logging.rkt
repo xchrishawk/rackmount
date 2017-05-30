@@ -63,7 +63,7 @@
 
 ;; -- Structs --
 
-(struct log-event (date		; the date the event occurred, in seconds
+(struct log-event (date		; the date the event occurred, in milliseconds
                    level	; the level of the event
                    category	; the category to file the event
                    identifier	; the identifier of the object which raised the event
@@ -97,7 +97,7 @@
   (wrap-evt log-event-queue identity))
 
 (define (log-event->string log-event)
-  (let* ([time (seconds->string (log-event-date log-event))]
+  (let* ([time (inexact-milliseconds->string (log-event-date log-event))]
          [level (log-event-level->string (log-event-level log-event))]
          [category (log-event-category log-event)]
          [identifier (log-event-identifier log-event)]
@@ -125,10 +125,10 @@
 
 ;; Returns a date string for the specified date. The date should be a value returned
 ;; from current-seconds (i.e., a time period past the UNIX epoch).
-(define (seconds->string seconds)
+(define (inexact-milliseconds->string inexact-milliseconds)
   (define (padded-number-string value width)
     (~a value #:width width #:align 'right #:pad-string "0"))
-  (let* ([date (seconds->date seconds)])
+  (let* ([date (seconds->date (/ inexact-milliseconds 1000.0))])
     (format "~A-~A-~A ~A:~A:~A.~A"
             (padded-number-string (date-year date) 4)
             (padded-number-string (date-month date) 2)
@@ -155,14 +155,14 @@
                      [v-arg (generate-temporary "v")])
          (define (make-log-fn name level)
            `(define (,name ,#'format-arg . ,#'v-arg)
-              (log-event-enqueue (log-event (current-seconds)
+              (log-event-enqueue (log-event (current-inexact-milliseconds)
                                             ,level
                                             ,#'category
                                             #f
                                             (apply format ,#'format-arg ,#'v-arg)))))
          (define (make-log-identifier-fn name level)
            `(define (,name ,#'identifier-arg ,#'format-arg . ,#'v-arg)
-              (log-event-enqueue (log-event (current-seconds)
+              (log-event-enqueue (log-event (current-inexact-milliseconds)
                                             ,level
                                             ,#'category
                                             ,#'identifier-arg
