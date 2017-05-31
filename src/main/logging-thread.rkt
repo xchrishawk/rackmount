@@ -10,6 +10,7 @@
 
 ;; -- Requires --
 
+(require "../main/define-thread.rkt")
 (require "../util/logging.rkt")
 (require "../util/misc.rkt")
 
@@ -18,30 +19,24 @@
 (provide
  (contract-out
 
-  ;; Starts and returns a logging thread.
-  [logging-thread-start (-> opaque-logging-thread?)]
-
-  ;; Synchronously stops the specified logging thread.
-  [logging-thread-stop (-> opaque-logging-thread? void?)]))
+  ;; Configuration struct for the logging thread.
+  [struct logging-thread-config ([minimum-log-event-level log-event-level?])]))
 
 ;; -- Types --
 
-(struct opaque-logging-thread (thread))
+(struct logging-thread-config (minimum-log-event-level)
+  #:transparent)
 
 ;; -- Public Procedures --
 
-(define (logging-thread-start)
-  (opaque-logging-thread (thread logging-thread-proc)))
-
-(define (logging-thread-stop logging-thread)
-  (let ([thd (opaque-logging-thread-thread logging-thread)])
-    (thread-send thd 'shutdown)
-    (sync thd))
-  (void))
+(define-thread
+  logging-thread
+  logging-thread-config
+  logging-thread-proc)
 
 ;; -- Private Procedures --
 
-(define (logging-thread-proc)
+(define (logging-thread-proc config)
   (let loop ()
     (match (sync (wrapped-thread-receive-evt)
                  (log-event-dequeue-evt))
@@ -50,15 +45,17 @@
        (let flush-all-loop ()
          (let ([log-event (log-event-dequeue)])
            (when log-event
-             (report-log-event log-event)
+             (report-log-event log-event config)
              (flush-all-loop))))]
       ;; Received event - report it
       [(? log-event? log-event)
-       (report-log-event log-event)
+       (report-log-event log-event config)
        (loop)])))
 
 ;; Reports a log event. For now, just print it to the output port. Eventually they
 ;; will get saved to some type of persistent store.
-(define (report-log-event log-event)
-  (displayln (log-event->string log-event))
-  (newline))
+(define (report-log-event log-event config)
+  (when (log-event-level-enabled? (log-event-level log-event)
+                                  (logging-thread-config-minimum-log-event-level config))
+    (displayln (log-event->string log-event))
+    (newline)))

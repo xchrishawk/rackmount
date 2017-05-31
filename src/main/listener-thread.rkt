@@ -10,6 +10,7 @@
 
 ;; -- Requires --
 
+(require "../main/define-thread.rkt")
 (require "../util/logging.rkt")
 (require "../util/misc.rkt")
 
@@ -23,17 +24,9 @@
                                   [interface (or/c string? false?)]
                                   [port-number port-number?]
                                   [max-wait-count exact-positive-integer?]
-                                  [reusable boolean?])]
-
-  ;; Starts a new listener thread with the specified arguments.
-  [listener-thread-start (-> listener-thread-config? opaque-listener-thread?)]
-
-  ;; Synchronously stops the specified listener thread.
-  [listener-thread-stop (-> opaque-listener-thread? void?)]))
+                                  [reusable boolean?])]))
 
 ;; -- Types --
-
-(struct opaque-listener-thread (thread))
 
 (struct listener-thread-config (working-dir
                                 interface
@@ -44,14 +37,10 @@
 
 ;; -- Public Procedures --
 
-(define (listener-thread-start config)
-  (opaque-listener-thread (thread (λ () (listener-thread-proc config)))))
-
-(define (listener-thread-stop listener-thread)
-  (let ([thd (opaque-listener-thread-thread listener-thread)])
-    (thread-send thd 'shutdown)
-    (sync thd))
-  (void))
+(define-thread
+  listener-thread
+  listener-thread-config
+  listener-thread-proc)
 
 ;; -- Private Procedures --
 

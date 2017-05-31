@@ -38,10 +38,6 @@
                      [identifier (or/c string? false?)]
                      [text string?])]
 
-  ;; The current minimum enabled log level. Events lower than this level will not
-  ;; be queued by calls to log-event-enqueue.
-  [minimum-log-event-level (parameter/c log-event-level?)]
-
   ;; Enqueues an event into the logging queue.
   [log-event-enqueue (-> log-event? void?)]
 
@@ -60,9 +56,9 @@
   ;; Predicate returning #t if the argument is a valid log level.
   [log-event-level? (-> any/c boolean?)]
 
-  ;; Returns #t if the specified log event level is enabled, based on the current
-  ;; value of the minimum-log-event-level parameter.
-  [log-event-level-enabled? (-> log-event-level? boolean?)]))
+  ;; Returns #t if the specified log event level is enabled, based on the
+  ;; specified minimum log event level.
+  [log-event-level-enabled? (-> log-event-level? log-event-level? boolean?)]))
 
 ;; -- Structs --
 
@@ -74,9 +70,6 @@
   #:prefab)
 
 ;; -- Objects --
-
-(define minimum-log-event-level
-  (make-parameter 'trace))
 
 ;; Lookup table for log levels.
 (define log-event-levels (hash 'critical (cons 0 "Critical")
@@ -92,8 +85,7 @@
 ;; -- Public Procedures --
 
 (define (log-event-enqueue log-event)
-  (when (log-event-level-enabled? (log-event-level log-event))
-    (async-channel-put log-event-queue log-event)))
+  (async-channel-put log-event-queue log-event))
 
 (define (log-event-dequeue)
   (async-channel-try-get log-event-queue))
@@ -115,9 +107,9 @@
 (define (log-event-level? x)
   (if (hash-ref log-event-levels x #f) #t #f))
 
-(define (log-event-level-enabled? log-event-level)
+(define (log-event-level-enabled? log-event-level minimum-log-event-level)
   (<= (log-event-level->integer log-event-level)
-      (log-event-level->integer (minimum-log-event-level))))
+      (log-event-level->integer minimum-log-event-level)))
 
 ;; -- Private Procedures --
 
@@ -216,12 +208,6 @@
       (semaphore-wait semaphore)
       (check-equal? rx-text "test")))
 
-  ;; Tests that events lower than the minimum logging level are not enqueued.
-  (test-case "log-event-queue minimum level"
-    (parameterize ([minimum-log-event-level 'critical])
-      (log-event-enqueue (log-event (current-seconds) 'error "test" #f "test")))
-    (check-false (sync/timeout 0.01 (log-event-dequeue-evt))))
-
   ;; Test for the log-event-level? procedure.
   (test-case "log-event-level?"
     (for ([level (in-list (list 'critical 'error 'warning 'info 'debug 'trace))])
@@ -231,14 +217,12 @@
   ;; Test that the minimum-log-event-level parameter and log-event-level-enabled?
   ;; operate as expected.
   (test-case "log-event-level-enabled?"
-    (parameterize ([minimum-log-event-level 'error])
-      (check-true (log-event-level-enabled? 'critical))
-      (check-true (log-event-level-enabled? 'error))
-      (check-false (log-event-level-enabled? 'warning)))
-    (parameterize ([minimum-log-event-level 'debug])
-      (check-true (log-event-level-enabled? 'info))
-      (check-true (log-event-level-enabled? 'debug))
-      (check-false (log-event-level-enabled? 'trace))))
+    (check-true (log-event-level-enabled? 'critical 'error))
+    (check-true (log-event-level-enabled? 'error 'error))
+    (check-false (log-event-level-enabled? 'warning 'error))
+    (check-true (log-event-level-enabled? 'info 'debug))
+    (check-true (log-event-level-enabled? 'debug 'debug))
+    (check-false (log-event-level-enabled? 'trace 'debug)))
 
   ;; Test for the log-event-level->integer procedure.
   (test-case "log-event-level->integer"
