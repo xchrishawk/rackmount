@@ -14,6 +14,7 @@
 (require "main/arguments.rkt")
 (require "main/listener-thread.rkt")
 (require "main/logging-thread.rkt")
+(require "main/manager-thread.rkt")
 (require "util/logging.rkt")
 
 ;; -- Provides --
@@ -33,6 +34,10 @@
             (logging-thread-config (arguments-minimum-log-event-level args))]
            [logging-thread
             (logging-thread-start logging-thread-config)]
+           [manager-thread-config
+            (manager-thread-config #f)]
+           [manager-thread
+            (manager-thread-start manager-thread-config)]
            [listener-thread-config
             (listener-thread-config (arguments-working-dir args)
                                     (arguments-interface args)
@@ -45,6 +50,7 @@
       (wait-for-break)
       (main-log-info "Break received, terminating application...")
       (listener-thread-stop listener-thread)
+      (manager-thread-stop manager-thread)
       (logging-thread-stop logging-thread))))
 
 ;; -- Private Procedures --
