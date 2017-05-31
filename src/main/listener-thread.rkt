@@ -11,6 +11,7 @@
 ;; -- Requires --
 
 (require "../util/logging.rkt")
+(require "../util/misc.rkt")
 
 ;; -- Provides --
 
@@ -75,8 +76,7 @@
     ;; Enter the listener's main loop
     (let loop ()
       ;; Wait for either a thread message or a new client connection
-      (match (sync (wrap-evt (thread-receive-evt) (λ (evt) (thread-receive)))
-                   listener)
+      (match (sync (wrapped-thread-receive-evt) listener)
         ;; Received shutdown command - exit the loop
         ['shutdown (void)]
         ;; Client connected!

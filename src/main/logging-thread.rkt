@@ -11,6 +11,7 @@
 ;; -- Requires --
 
 (require "../util/logging.rkt")
+(require "../util/misc.rkt")
 
 ;; -- Provides --
 
@@ -42,9 +43,7 @@
 
 (define (logging-thread-proc)
   (let loop ()
-    (match (sync (wrap-evt
-                  (thread-receive-evt)
-                  (λ (evt) (thread-receive)))
+    (match (sync (wrapped-thread-receive-evt)
                  (log-event-dequeue-evt))
       ;; Received shutdown event - flush all remaining events then stop looping
       ['shutdown
