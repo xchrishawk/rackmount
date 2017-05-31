@@ -45,6 +45,7 @@
   ;; Launch workers
   (let* ([workers (for/list ([index (in-range (manager-thread-config-worker-count config))])
                     (let ([identifier (format "Worker ~A" index)])
+                      (manager-log-trace "Starting worker with identifier ~A..." identifier)
                       (worker-start identifier)))]
          [worker-get-evts (map worker-get-evt workers)])
 
@@ -62,28 +63,29 @@
            (match message
 
              ;; Wrapped log event - re-enqueue in main log queue
-             [(list 'log-event date level category identifier text)
-              (let ([log-event (log-event date level category identifier text)])
+             [(? log-event-list? lst)
+              (let ([log-event (list->log-event lst)])
                 (log-event-enqueue log-event))]
 
              ;; Unknown message type?
              [else
-              (manager-log-error "Received unknown message (~A). Ignoring..." message)
-              (loop)])
+              (manager-log-error "Received unknown message (~A). Ignoring..." message)])
+
            (loop)]
 
           ;; Received shutdown event - stop workers and stop looping
           ['shutdown
            (for ([worker (in-list workers)])
+             (manager-log-trace "Terminating worker with identifier ~A..." (worker-identifier worker))
              (worker-stop worker))]
 
           ;; Unknown event? Log and continue
           [else
            (manager-log-error "Received unknown event (~A). Ignoring..." evt)
-           (loop)]))))
+           (loop)])))
 
   ;; Log and shut down
-  (manager-log-trace "Manager thread terminating."))
+  (manager-log-trace "Manager thread terminating.")))
 
 ;; Local logging procedure.
 (define-local-log manager "Manager")

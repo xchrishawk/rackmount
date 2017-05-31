@@ -58,7 +58,17 @@
 
   ;; Returns #t if the specified log event level is enabled, based on the
   ;; specified minimum log event level.
-  [log-event-level-enabled? (-> log-event-level? log-event-level? boolean?)]))
+  [log-event-level-enabled? (-> log-event-level? log-event-level? boolean?)]
+
+  ;; Predicate returning #t if the argument is a list representation of a
+  ;; log-event struct.
+  [log-event-list? (-> any/c boolean?)]
+
+  ;; Converts a log-event to a list representation.
+  [log-event->list (-> log-event? log-event-list?)]
+
+  ;; Converts a list representation to a log event.
+  [list->log-event (-> log-event-list? log-event?)]))
 
 ;; -- Structs --
 
@@ -110,6 +120,20 @@
 (define (log-event-level-enabled? log-event-level minimum-log-event-level)
   (<= (log-event-level->integer log-event-level)
       (log-event-level->integer minimum-log-event-level)))
+
+(define log-event-list?
+  (list/c 'log-event inexact? log-event-level? string? (or/c string? false?) string?))
+
+(define (log-event->list log-event)
+  (list 'log-event
+        (log-event-date log-event)
+        (log-event-level log-event)
+        (log-event-category log-event)
+        (log-event-identifier log-event)
+        (log-event-text log-event)))
+
+(define (list->log-event lst)
+  (apply log-event (rest lst)))
 
 ;; -- Private Procedures --
 

@@ -96,7 +96,7 @@
             ;; workaround, we just wrap the event into a list and send it that way
             ;; (rather than removing the contracts on the struct).
             [(? log-event? log-event)
-             (place-channel-put channel (wrap-log-event log-event))
+             (place-channel-put channel (log-event->list log-event))
              (loop)]
 
             ;; Received shutdown command - exit loop
@@ -111,12 +111,3 @@
 
 ;; Local logging functions.
 (define-local-log worker "Worker" #:with-identifier #t)
-
-;; Wraps a log-event struct in a prefab struct.
-(define (wrap-log-event log-event)
-  (list 'log-event
-        (log-event-date log-event)
-        (log-event-level log-event)
-        (log-event-category log-event)
-        (log-event-identifier log-event)
-        (log-event-text log-event)))
