@@ -30,14 +30,17 @@
 (define (main args-list)
   (let* ([args (get-arguments args-list)])
     (main-log-info "Starting with arguments: ~A" (string-join args-list))
-    (let* ([logging-thread-config
+    (let* (;; Create logging thread
+           [logging-thread-config
             (logging-thread-config (arguments-minimum-log-event-level args))]
            [logging-thread
             (logging-thread-start logging-thread-config)]
+           ;; Create manager thread
            [manager-thread-config
-            (manager-thread-config #f)]
+            (manager-thread-config (arguments-worker-count args))]
            [manager-thread
             (manager-thread-start manager-thread-config)]
+           ;; Create listener thread
            [listener-thread-config
             (listener-thread-config (arguments-working-dir args)
                                     (arguments-interface args)
@@ -46,9 +49,11 @@
                                     #t)] ; reusable
            [listener-thread
             (listener-thread-start listener-thread-config)])
+      ;; Wait for break
       (main-log-debug "Startup complete. Waiting for break...")
       (wait-for-break)
       (main-log-info "Break received, terminating application...")
+      ;; Shut down all of our threads
       (listener-thread-stop listener-thread)
       (manager-thread-stop manager-thread)
       (logging-thread-stop logging-thread))))

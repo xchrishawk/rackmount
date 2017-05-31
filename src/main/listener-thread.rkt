@@ -82,4 +82,4 @@
   (listener-log-trace "Listener thread terminating."))
 
 ;; Local logging procedure.
-(define-local-log listener "Main Listener")
+(define-local-log listener "Listener")

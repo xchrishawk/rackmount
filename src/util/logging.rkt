@@ -67,17 +67,17 @@
                    category	; the category to file the event
                    identifier	; the identifier of the object which raised the event
                    text)	; the text of the event
-  #:prefab)
+  #:transparent)
 
 ;; -- Objects --
 
 ;; Lookup table for log levels.
 (define log-event-levels (hash 'critical (cons 0 "Critical")
-                         'error (cons 1 "Error")
-                         'warning (cons 2 "Warning")
-                         'info (cons 3 "Info")
-                         'debug (cons 4 "Debug")
-                         'trace (cons 5 "Trace")))
+                               'error (cons 1 "Error")
+                               'warning (cons 2 "Warning")
+                               'info (cons 3 "Info")
+                               'debug (cons 4 "Debug")
+                               'trace (cons 5 "Trace")))
 
 ;; Main logging queue.
 (define log-event-queue (make-async-channel))
