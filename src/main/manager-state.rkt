@@ -2,8 +2,16 @@
 ;; manager-state.rkt
 ;; Chris Vig (chris@invictus.so)
 ;;
-;; This module defines types and procedures to assist the manager with tracking
-;; the state of its worker places.
+;; This module defines a manager state object, which is used to keep track of the
+;; workers and tasks currently being managed by the manager.
+;;
+;; The general structure is:
+;;
+;; - opaque-manager-state
+;;   - worker-lookup (hash of worker-identifier? -> opaque-worker-state)
+;; - opaque-worker-state
+;;   - worker (worker?)
+;;   - task-lookup (hash of gen:task-identifer? -> gen:task-handle)
 ;;
 
 #lang racket
@@ -21,8 +29,14 @@
   ;; Creates a new manager state object.
   [manager-state (-> (listof worker?) opaque-manager-state?)]
 
+  ;; Selects the appropriate worker for the next ask.
+  [manager-state-select-worker (-> opaque-manager-state? worker?)]
+
   ;; Gets the worker with the specified identifier.
   [manager-state-get-worker (-> opaque-manager-state? worker-identifier? worker?)]
+
+  ;; Gets a list of all workers.
+  [manager-state-get-workers (-> opaque-manager-state? (listof worker?))]
 
   ;; Adds a new task handle to the specified worker.
   [manager-state-add-task-handle (-> opaque-manager-state? worker-identifier? gen:task-handle? opaque-manager-state?)]
@@ -47,10 +61,18 @@
      (values (worker-identifier worker)
              (opaque-worker-state worker (hash))))))
 
+(define (manager-state-select-worker manager-state)
+  ;; For now, just pick one at random. TODO: better selection
+  (let ([worker-states (hash-values (opaque-manager-state-worker-lookup manager-state))])
+    (opaque-worker-state-worker (list-ref worker-states (random (length worker-states))))))
+
 (define (manager-state-get-worker manager-state worker-identifier)
   (let* ([worker-lookup (opaque-manager-state-worker-lookup manager-state)]
          [worker-state (hash-ref worker-lookup worker-identifier)])
     (opaque-worker-state-worker worker-state)))
+
+(define (manager-state-get-workers manager-state)
+  (map opaque-worker-state-worker (hash-values (opaque-manager-state-worker-lookup manager-state))))
 
 (define (manager-state-add-task-handle manager-state worker-identifier task-handle)
   (let* ([old-worker-lookup (opaque-manager-state-worker-lookup manager-state)]

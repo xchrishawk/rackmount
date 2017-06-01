@@ -43,7 +43,7 @@
 (define (manager-queue-task-handle manager task-handle)
   (thread-send (manager-thread manager) task-handle))
 
-;; -- Private Procedures --
+;; -- Private Procedures (Main Loop) --
 
 ;; Main procedure for the thread.
 (define (manager-proc config)
@@ -61,47 +61,73 @@
         (match evt
           ;; Task to enqueue - select a worker and send it
           [(? gen:task-handle? task-handle)
-           (let ([task-handle-list (gen:task-handle->list task-handle)]
-                 [worker (select-worker worker-list)])
-             (manager-log-trace "Queuing task ~A on worker ~A..."
-                                (gen:task-handle-identifier task-handle)
-                                (worker-identifier worker))
-             (worker-put worker task-handle-list)
-             (loop (manager-state-add-task-handle state (worker-identifier worker) task-handle)))]
+           (loop (manager-proc-task-handle state task-handle))]
           ;; Message from worker
           [(list 'worker-message (? string? worker-identifier) message)
-           ;; Check type of message...
-           (match message
-             ;; Wrapped log event - re-enqueue in main log queue
-             [(? log-event-list? lst)
-              (let ([log-event (list->log-event lst)])
-                (log-event-enqueue log-event)
-                (loop state))]
-             ;; Task completed event - close and remove the task handle
-             [(list 'task-completed task-handle-identifier)
-              (let ([task-handle (manager-state-get-task-handle state worker-identifier task-handle-identifier)])
-                (manager-log-trace "Received completion of task ~A from worker ~A, closing and removing..."
-                                   task-handle-identifier
-                                   worker-identifier)
-                (gen:task-handle-close task-handle)
-                (loop (manager-state-remove-task-handle state worker-identifier task-handle-identifier)))]
-             ;; Unknown message type?
-             [else
-              (manager-log-error "Received unknown message (~A). Ignoring..." message)
-              (loop state)])]
-          ;; Received shutdown event - stop workers and stop looping
-          ['shutdown
-           (for ([worker (in-list worker-list)])
-             (manager-log-trace "Terminating worker with identifier ~A..." (worker-identifier worker))
-             (worker-stop worker))]
+           (loop (manager-proc-worker-message state worker-identifier message))]
+          ;; Shutdown command
+          ['shutdown (manager-proc-shutdown state)]
           ;; Unknown event? Log and continue
-          [else
-           (manager-log-error "Received unknown event (~A). Ignoring..." evt)
-           (loop state)])))
+          [else (loop (manager-proc-unknown state))])))
   ;; Log and shut down
   (manager-log-trace "Manager thread terminating.")))
 
-;; -- Private Utility --
+;; -- Private Procedures (Event Handlers) --
+
+;; Process a received task handle.
+(define (manager-proc-task-handle state task-handle)
+  (let ([task-handle-list (gen:task-handle->list task-handle)]
+        [worker (manager-state-select-worker state)])
+    (manager-log-trace "Queuing task ~A on worker ~A..."
+                       (gen:task-handle-identifier task-handle)
+                       (worker-identifier worker))
+    (worker-put worker task-handle-list)
+    (manager-state-add-task-handle state (worker-identifier worker) task-handle)))
+
+;; Process a message received from a worker.
+(define (manager-proc-worker-message state worker-identifier message)
+  (match message
+    ;; Message is a logged event
+    [(? log-event-list? log-event-list)
+     (manager-proc-worker-message-log-event state worker-identifier log-event-list)]
+    ;; Message is a "task completed" message
+    [(list 'task-completed task-handle-identifier)
+     (manager-proc-worker-message-task-completed state worker-identifier task-handle-identifier)]
+    ;; Unknown message type?
+    [else (manager-proc-worker-message-unknown state message)]))
+
+;; Process a shutdown command.
+(define (manager-proc-shutdown state)
+  (for ([worker (in-list (manager-state-get-workers state))])
+    (worker-stop worker)))
+
+;; Process an unknown event.
+(define (manager-proc-unknown state evt)
+  (manager-log-error "Received unknown event (~A). Ignoring and continuing..." evt)
+  state)
+
+;; -- Private Procedures (Worker Message Handlers) --
+
+;; Process a log event message.
+(define (manager-proc-worker-message-log-event state worker-identifier log-event-list)
+  (let ([log-event (list->log-event log-event-list)])
+    (log-event-enqueue log-event)
+    state))
+
+;; Process a task completed message.
+(define (manager-proc-worker-message-task-completed state worker-identifier task-handle-identifier)
+  (let ([task-handle (manager-state-get-task-handle state worker-identifier task-handle-identifier)])
+    (manager-log-trace "Received completion of task ~A from worker ~A. Closing and removing..."
+                       task-handle-identifier
+                       worker-identifier)
+    (gen:task-handle-close task-handle)
+    (manager-state-remove-task-handle state worker-identifier task-handle-identifier)))
+
+(define (manager-proc-worker-message-unknown state message)
+  (manager-log-error "Received unknown message (~A). Ignoring and continuing..." message)
+  state)
+
+;; -- Private Procedures (Utility) --
 
 ;; Selects the next worker to receive a task.
 (define (select-worker worker-list)
