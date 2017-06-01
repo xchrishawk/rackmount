@@ -129,10 +129,5 @@
 
 ;; -- Private Procedures (Utility) --
 
-;; Selects the next worker to receive a task.
-(define (select-worker worker-list)
-  ;; For now, just pick a random one. Eventually this should be a priority queue.
-  (list-ref worker-list (random (length worker-list))))
-
 ;; Local logging procedure.
 (define-local-log manager "Manager")
