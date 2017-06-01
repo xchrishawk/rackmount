@@ -24,8 +24,8 @@
   ;; Configuration struct for the manager thread.
   [struct manager-config ([worker-count exact-positive-integer?])]
 
-  ;; Queues a client task with a worker.
-  [manager-queue-task (-> manager? gen:task? void?)]))
+  ;; Queues a task handle with a worker.
+  [manager-queue-task-handle (-> manager? gen:task-handle? void?)]))
 
 ;; -- Types --
 
@@ -39,8 +39,8 @@
   manager-config
   manager-proc)
 
-(define (manager-queue-task manager task)
-  (thread-send (manager-thread manager) task))
+(define (manager-queue-task-handle manager task-handle)
+  (thread-send (manager-thread manager) task-handle))
 
 ;; -- Private Procedures --
 
@@ -59,10 +59,10 @@
       (let ([evt (apply sync (wrapped-thread-receive-evt) worker-get-evts)])
         (match evt
           ;; Task to enqueue - select a worker and send it
-          [(? gen:task? task)
-           (let ([task-list (gen:task->list task)]
+          [(? gen:task-handle? task)
+           (let ([task-handle-list (gen:task-handle->list task)]
                  [worker (select-worker workers)])
-             (worker-put worker task-list))
+             (worker-put worker task-handle-list))
            (loop)]
           ;; Message from worker
           [(list 'worker-message (? string? identifier) message)

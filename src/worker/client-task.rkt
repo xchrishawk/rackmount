@@ -18,10 +18,7 @@
 (provide
  (contract-out
 
-  ;; Struct representing a client task.
-  [struct client-task ([identifier client-task-identifier?]
-                       [input-port input-port?]
-                       [output-port output-port?])]
+  ;; -- Identifiers --
 
   ;; Predicate returning #t if the argument is a valid client task identifier.
   [client-task-identifier? (-> any/c boolean?)]
@@ -29,26 +26,31 @@
   ;; Returns a generator building a sequence of client identifiers.
   [client-task-identifier-generator (-> (-> client-task-identifier?))]
 
-  ;; Predicate returning #t if the argument is a valid list representation for a
-  ;; client task struct.
-  [client-task-list? (-> any/c boolean?)]
+  ;; -- Task Handle --
 
-  ;; Converts a list representation to a client-task struct.
-  [list->client-task (-> client-task-list? client-task?)]))
+  ;; Struct representing a client task.
+  [struct client-task-handle ([identifier client-task-identifier?]
+                              [input-port input-port?]
+                              [output-port output-port?])]))
 
 ;; -- Structs --
 
-(struct client-task (identifier
-                     input-port
-                     output-port)
-  #:methods gen:task
-  [(define (gen:task-identifier task)
-     (client-task-identifier task))
-   (define (gen:task->list task)
+(struct client-task-handle (identifier
+                            input-port
+                            output-port)
+  #:methods gen:task-handle
+  [(define (gen:task-handle-identifier task-handle)
+     (client-task-handle-identifier task-handle))
+
+   (define (gen:task-handle-close task-handle)
+     (close-input-port (client-task-handle-input-port task-handle))
+     (close-output-port (client-task-handle-output-port task-handle)))
+
+   (define (gen:task-handle->list task-handle)
      (list 'client-task
-           (client-task-identifier task)
-           (client-task-input-port task)
-           (client-task-output-port task)))])
+           (client-task-handle-identifier task-handle)
+           (client-task-handle-input-port task-handle)
+           (client-task-handle-output-port task-handle)))])
 
 
 ;; -- Public Procedures --
@@ -60,9 +62,3 @@
   (let ([naturals (sequence->generator (in-naturals))])
     (λ ()
       (format "Client ~A" (naturals)))))
-
-(define client-task-list?
-  (list/c 'client-task string? input-port? output-port?))
-
-(define (list->client-task lst)
-  (apply client-task (rest lst)))

@@ -96,10 +96,10 @@
              (place-channel-put channel (log-event->list log-event))
              (loop)]
             ;; Task request
-            [(? gen:task-list? task-list)
-             (let ([task (list->gen:task task-list)])
-               (worker-log-trace identifier "TEMP: Received task ~A" task))
-             (loop)]
+;            [(? gen:task-list? task-list)
+;             (let ([task (list->gen:task task-list)])
+;               (worker-log-trace identifier "TEMP: Received task ~A" task))
+;             (loop)]
             ;; Received shutdown command - exit loop
             ['shutdown (void)]
             ;; Unknown event? Log and continue

@@ -56,12 +56,15 @@
   (with-handlers ([exn:break? void])
     (sync/enable-break never-evt)))
 
+;; Creates the configuration struct for the logger.
 (define (make-logger-config args)
   (logger-config (arguments-minimum-log-event-level args)))
 
+;; Creates the configuration struct for the worker manager.
 (define (make-manager-config args)
   (manager-config (arguments-worker-count args)))
 
+;; Creates the configuration struct for the listener.
 (define (make-listener-config args manager)
   (let* ([identifier-generator (client-task-identifier-generator)]
          [client-connected (λ (input-port output-port)
@@ -75,14 +78,15 @@
                      #t  ; reusable
                      client-connected)))
 
+;; Creates a client task handle and queues it with the manager.
 (define (handle-client-connected manager
                                  identifier-generator
                                  input-port
                                  output-port)
-  (let ([task (client-task (identifier-generator)
-                           input-port
-                           output-port)])
-    (manager-queue-task manager task)))
+  (let ([task-handle (client-task-handle (identifier-generator)
+                                         input-port
+                                         output-port)])
+    (manager-queue-task-handle manager task-handle)))
 
 ;; Local logging procedures
 (define-local-log main "Main")
