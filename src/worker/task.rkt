@@ -34,7 +34,7 @@
   [rename task-handle? gen:task-handle? (-> any/c boolean?)]
 
   ;; Returns an identifier for this task handle.
-  [gen:task-handle-identifier (-> task-handle? any/c)]
+  [gen:task-handle-identifier (-> task-handle? task-identifier?)]
 
   ;; Performs manager-side cleanup of the task after it has completed.
   [gen:task-handle-close (-> task-handle? any)]
@@ -49,11 +49,14 @@
 
  (contract-out
 
+  ;; Predicate returning #t if the argument is a valid task identifier.
+  [rename task-identifier? gen:task-identifier? (-> any/c boolean?)]
+
   ;; Predicate returning #t if the argument implements the gen:task interface.
   [rename task? gen:task? (-> any/c boolean?)]
 
   ;; Returns an identifier for this task.
-  [gen:task-identifier (-> task? any/c)]
+  [gen:task-identifier (-> task? task-identifier?)]
 
   ;; Start a task.
   [gen:task-start (-> task? any)]
@@ -78,3 +81,6 @@
   (gen:task-start task)
   (gen:task-cancel task)
   (gen:task-completed-evt task))
+
+(define task-identifier?
+  any/c)

@@ -20,14 +20,20 @@
 (provide
  (contract-out
 
+  ;; Predicate returning #t if the argument is a worker object.
+  [rename opaque-worker? worker? (-> any/c boolean?)]
+
+  ;; Predicate returning #t if the argument is a valid worker identifier.
+  [worker-identifier? (-> any/c boolean?)]
+
   ;; Starts a new worker with the specified identifier.
-  [worker-start (-> string? opaque-worker?)]
+  [worker-start (-> worker-identifier? opaque-worker?)]
 
   ;; Stops the specified worker.
   [worker-stop (-> opaque-worker? void?)]
 
   ;; Returns the identifier of the specified worker.
-  [worker-identifier (-> opaque-worker? string?)]
+  [worker-identifier (-> opaque-worker? worker-identifier?)]
 
   ;; Sends a message to the specified worker.
   [worker-put (-> opaque-worker? place-message-allowed? void?)]
@@ -43,6 +49,9 @@
 (struct opaque-worker (identifier place channel))
 
 ;; -- Public Procedures --
+
+(define worker-identifier?
+  string?)
 
 (define (worker-start identifier)
   (let-values ([(worker-place) (make-worker-place)]
