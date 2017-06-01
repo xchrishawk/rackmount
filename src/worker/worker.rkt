@@ -80,8 +80,12 @@
           [channel (place-channel-get bootstrap-channel)])
       (worker-log-trace identifier "Worker launched.")
       ;; Enter the main loop
-      (let loop ()
-        (let ([evt (sync channel (log-event-dequeue-evt))])
+      (let loop ([tasks (set)])
+        ;; Wait for an event
+        (let ([evt (apply sync
+                          channel
+                          (log-event-dequeue-evt)
+                          (set-map tasks gen:task-completed-evt))])
           (match evt
             ;; Log event enqueued - forward to manager so it can be enqueued in the
             ;; main place's log queue.
@@ -94,14 +98,21 @@
             ;; (rather than removing the contracts on the struct).
             [(? log-event? log-event)
              (place-channel-put channel (log-event->list log-event))
-             (loop)]
-            ;; Task request
-;            [(? gen:task-list? task-list)
-;             (let ([task (list->gen:task task-list)])
-;               (worker-log-trace identifier "TEMP: Received task ~A" task))
-;             (loop)]
-            ;; Received shutdown command - exit loop
-            ['shutdown (void)]
+             (loop tasks)]
+            ;; Task request from manager
+            [(? gen:task-list? task-list)
+             (let ([task (list->gen:task task-list)])
+               (worker-log-trace identifier
+                                 "Received task with identifier ~A, starting it..."
+                                 (gen:task-identifier task))
+               (gen:task-start task)
+               (loop (set-add tasks task)))]
+            ;; Task completed - notify manager and remove from task list
+            [(? (λ (x) (set-member? tasks x)) task)
+             (place-channel-put channel (list 'task-completed (gen:task-identifier task)))
+             (loop (set-remove tasks task))]
+            ;; Shutdown command - exit loop, returning remaining task list
+            ['shutdown tasks]
             ;; Unknown event? Log and continue
             [else
              (worker-log-error identifier "Received unknown event (~A). Ignoring..." evt)

@@ -31,7 +31,15 @@
   ;; Struct representing a client task.
   [struct client-task-handle ([identifier client-task-identifier?]
                               [input-port input-port?]
-                              [output-port output-port?])]))
+                              [output-port output-port?])]
+
+  ;; -- Serialization --
+
+  ;; Predicate returning #t if the argument is a valid list for a client task.
+  [client-task-list? (-> any/c boolean?)]
+
+  ;; Converts a client task list to a client task.
+  [list->client-task (-> client-task-list? gen:task?)]))
 
 ;; -- Structs --
 
@@ -52,6 +60,27 @@
            (client-task-handle-input-port task-handle)
            (client-task-handle-output-port task-handle)))])
 
+(struct client-task (identifier
+                     input-port
+                     output-port
+                     thread)
+  #:mutable
+  #:methods gen:task
+  [(define (gen:task-identifier task)
+     (client-task-identifier task))
+
+   (define (gen:task-start task)
+     (let ([thd (thread (λ ()
+                          (let ([output-port (client-task-output-port task)])
+                            (displayln "Hello!" output-port)
+                            (flush-output output-port))))])
+       (set-client-task-thread! task thd)))
+
+   (define (gen:task-cancel task)
+     (error "TODO"))
+
+   (define (gen:task-completed-evt task)
+     (wrap-evt (client-task-thread task) (λ (evt) task)))])
 
 ;; -- Public Procedures --
 
@@ -62,3 +91,9 @@
   (let ([naturals (sequence->generator (in-naturals))])
     (λ ()
       (format "Client ~A" (naturals)))))
+
+(define client-task-list?
+  (list/c 'client-task client-task-identifier? input-port? output-port?))
+
+(define (list->client-task lst)
+  (apply client-task (flatten (list (rest lst) #f))))

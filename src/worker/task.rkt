@@ -62,7 +62,8 @@
   [gen:task-cancel (-> task? any)]
 
   ;; Returns a synchronizable event which is ready for synchronization when the
-  ;; task has completed running. The synchronization result is unspecified.
+  ;; task has completed running. The synchronization result is the task object
+  ;; itself.
   [gen:task-completed-evt (-> task? evt?)]))
 
 ;; -- Public Procedures --

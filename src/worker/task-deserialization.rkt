@@ -28,7 +28,9 @@
 
 ;; -- Procedures --
 
-(define (gen:task-list? x) #f)
+(define gen:task-list?
+  (or/c client-task-list?))
 
 (define (list->gen:task lst)
-  (error "TODO"))
+  (match lst
+    [client-task-list? (list->client-task lst)]))

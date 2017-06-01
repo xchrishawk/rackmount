@@ -86,6 +86,8 @@
   (let ([task-handle (client-task-handle (identifier-generator)
                                          input-port
                                          output-port)])
+    (main-log-trace "Created client task with identifier ~A. Queuing with manager..."
+                    (client-task-handle-identifier task-handle))
     (manager-queue-task-handle manager task-handle)))
 
 ;; Local logging procedures
