@@ -12,9 +12,10 @@
 ;; -- Requires --
 
 (require "main/arguments.rkt")
-(require "main/listener-thread.rkt")
-(require "main/logging-thread.rkt")
-(require "main/manager-thread.rkt")
+(require "main/listener.rkt")
+(require "main/logger.rkt")
+(require "main/manager.rkt")
+(require "worker/client-task.rkt")
 (require "util/logging.rkt")
 
 ;; -- Provides --
@@ -31,32 +32,22 @@
   (let* ([args (get-arguments args-list)])
     (main-log-info "Starting with arguments: ~A" (string-join args-list))
     (let* (;; Create logging thread
-           [logging-thread-config
-            (logging-thread-config (arguments-minimum-log-event-level args))]
-           [logging-thread
-            (logging-thread-start logging-thread-config)]
+           [logger-config (make-logger-config args)]
+           [logger (logger-start logger-config)]
            ;; Create manager thread
-           [manager-thread-config
-            (manager-thread-config (arguments-worker-count args))]
-           [manager-thread
-            (manager-thread-start manager-thread-config)]
+           [manager-config (make-manager-config args)]
+           [manager (manager-start manager-config)]
            ;; Create listener thread
-           [listener-thread-config
-            (listener-thread-config (arguments-working-dir args)
-                                    (arguments-interface args)
-                                    (arguments-port-number args)
-                                    4    ; max wait count
-                                    #t)] ; reusable
-           [listener-thread
-            (listener-thread-start listener-thread-config)])
+           [listener-config (make-listener-config args manager)]
+           [listener (listener-start listener-config)])
       ;; Wait for break
       (main-log-debug "Startup complete. Waiting for break...")
       (wait-for-break)
       (main-log-info "Break received, terminating application...")
       ;; Shut down all of our threads
-      (listener-thread-stop listener-thread)
-      (manager-thread-stop manager-thread)
-      (logging-thread-stop logging-thread))))
+      (listener-stop listener)
+      (manager-stop manager)
+      (logger-stop logger))))
 
 ;; -- Private Procedures --
 
@@ -64,6 +55,34 @@
 (define (wait-for-break)
   (with-handlers ([exn:break? void])
     (sync/enable-break never-evt)))
+
+(define (make-logger-config args)
+  (logger-config (arguments-minimum-log-event-level args)))
+
+(define (make-manager-config args)
+  (manager-config (arguments-worker-count args)))
+
+(define (make-listener-config args manager)
+  (let* ([identifier-generator (client-task-identifier-generator)]
+         [client-connected (λ (input-port output-port)
+                             (handle-client-connected manager
+                                                      identifier-generator
+                                                      input-port
+                                                      output-port))])
+    (listener-config (arguments-interface args)
+                     (arguments-port-number args)
+                     4   ; max wait count
+                     #t  ; reusable
+                     client-connected)))
+
+(define (handle-client-connected manager
+                                 identifier-generator
+                                 input-port
+                                 output-port)
+  (let ([task (client-task (identifier-generator)
+                           input-port
+                           output-port)])
+    (manager-queue-task manager task)))
 
 ;; Local logging procedures
 (define-local-log main "Main")

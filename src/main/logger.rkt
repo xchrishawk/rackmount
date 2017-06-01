@@ -1,5 +1,5 @@
 ;;
-;; logging-thread.rkt
+;; logger.rkt
 ;; Chris Vig (chris@invictus.so)
 ;;
 ;; This module defines the main place's logging thread, which is responsible for
@@ -20,26 +20,25 @@
  (contract-out
 
   ;; Configuration struct for the logging thread.
-  [struct logging-thread-config ([minimum-log-event-level log-event-level?])]))
+  [struct logger-config ([minimum-log-event-level log-event-level?])]))
 
 ;; -- Types --
 
-(struct logging-thread-config (minimum-log-event-level)
+(struct logger-config (minimum-log-event-level)
   #:transparent)
 
 ;; -- Public Procedures --
 
 (define-thread
-  logging-thread
-  logging-thread-config
-  logging-thread-proc)
+  logger
+  logger-config
+  logger-proc)
 
 ;; -- Private Procedures --
 
-(define (logging-thread-proc config)
+(define (logger-proc config)
   (let loop ()
-    (match (sync (wrapped-thread-receive-evt)
-                 (log-event-dequeue-evt))
+    (match (sync (wrapped-thread-receive-evt) (log-event-dequeue-evt))
       ;; Received shutdown event - flush all remaining events then stop looping
       ['shutdown
        (let flush-all-loop ()
@@ -56,6 +55,6 @@
 ;; will get saved to some type of persistent store.
 (define (report-log-event log-event config)
   (when (log-event-level-enabled? (log-event-level log-event)
-                                  (logging-thread-config-minimum-log-event-level config))
+                                  (logger-config-minimum-log-event-level config))
     (displayln (log-event->string log-event))
     (newline)))

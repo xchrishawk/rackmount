@@ -29,11 +29,11 @@
      (let ([thread-name-string (symbol->string (syntax->datum #'thread-name))]
            [config-struct-name (symbol->string (syntax->datum #'config-struct))])
        (with-syntax ([thread-struct
-                      (make-syntax/symbol stx "opaque-~A" thread-name-string)]
+                      (make-syntax/symbol stx "~A" thread-name-string)]
                      [thread-struct-thread
-                      (make-syntax/symbol stx "opaque-~A-thread" thread-name-string)]
+                      (make-syntax/symbol stx "~A-thread" thread-name-string)]
                      [thread-struct-pred
-                      (make-syntax/symbol stx "opaque-~A?" thread-name-string)]
+                      (make-syntax/symbol stx "~A?" thread-name-string)]
                      [config-struct-pred
                       (make-syntax/symbol stx "~A?" config-struct-name)]
                      [start-proc
@@ -49,7 +49,9 @@
          (let ([result
                 `(begin
                    (provide
+                    ,#'thread-struct
                     (contract-out
+                     [,#'thread-struct-pred (-> any/c boolean?)]
                      [,#'start-proc (-> ,#'config-struct-pred ,#'thread-struct-pred)]
                      [,#'stop-proc (-> ,#'thread-struct-pred void?)]))
                    (struct ,#'thread-struct (thread))
