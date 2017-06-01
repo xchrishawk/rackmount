@@ -11,6 +11,8 @@
 
 ;; -- Requires --
 
+(require "../worker/task.rkt")
+(require "../worker/task-deserialization.rkt")
 (require "../util/logging.rkt")
 
 ;; -- Provides --
@@ -71,21 +73,16 @@
 
 ;; Launches and returns a new place.
 (define (make-worker-place)
-
   ;; Launch the place
   (place bootstrap-channel
-
     ;; Get initial configuration from the bootstrap channel
     (let ([identifier (place-channel-get bootstrap-channel)]
           [channel (place-channel-get bootstrap-channel)])
-
       (worker-log-trace identifier "Worker launched.")
-
       ;; Enter the main loop
       (let loop ()
         (let ([evt (sync channel (log-event-dequeue-evt))])
           (match evt
-
             ;; Log event enqueued - forward to manager so it can be enqueued in the
             ;; main place's log queue.
             ;;
@@ -98,15 +95,17 @@
             [(? log-event? log-event)
              (place-channel-put channel (log-event->list log-event))
              (loop)]
-
+            ;; Task request
+            [(? gen:task-list? task-list)
+             (let ([task (list->gen:task task-list)])
+               (worker-log-trace identifier "TEMP: Received task ~A" task))
+             (loop)]
             ;; Received shutdown command - exit loop
             ['shutdown (void)]
-
             ;; Unknown event? Log and continue
             [else
              (worker-log-error identifier "Received unknown event (~A). Ignoring..." evt)
              (loop)])))
-
       (worker-log-trace identifier "Worker terminated."))))
 
 ;; Local logging functions.
