@@ -27,7 +27,7 @@
 
   ;; Parses and validates arguments from the specified list of strings. Raises a
   ;; user error if the arguments are not in a valid state.
-  [get-arguments (-> (listof string?) arguments?)]))
+  [parse-arguments (-> (listof string?) arguments?)]))
 
 ;; -- Types --
 
@@ -42,14 +42,6 @@
 
 ;; -- Public Procedures --
 
-(define (get-arguments args-list)
-  (let ([args (parse-arguments args-list)])
-    (validate-arguments args)
-    args))
-
-;; -- Private Procedures --
-
-;; Argument parsing procedure.
 (define parse-arguments
   (arguments-parser
    arguments
@@ -59,52 +51,28 @@
               #f	; port-number: user must specify
               #f	; client-timeout: default = #f (none)
               'trace)	; log-level: default = trace
-   (var ("-j" "--worker-count")
-        worker-count
-        (string->number-or-error (integer-in 1 64) "worker count"))
-   (var ("-w" "--working-dir")
-        working-dir)
-   (var ("-i" "--interface")
-        interface)
-   (var ("-p" "--port")
-        port-number
-        (string->number-or-error port-number? "port number"))
-   (var ("-z" "--client-timeout")
-        client-timeout
-        (string->number-or-error positive? "client timeout"))
-   (var ("-l" "--log-level")
-        minimum-log-event-level
-        (string->log-event-level-or-error "log level"))))
-
-;; Validates an arguments struct.
-(define (validate-arguments args)
-  ;; Validate working directory
-  (let ([working-dir (arguments-working-dir args)])
-    (when (not working-dir)
-      (raise-user-error "Working directory not specified."))
-    (when (not (directory-exists? working-dir))
-      (raise-user-error (format "Invalid working directory: ~A" working-dir))))
-  ;;; Validate port number
-  (let ([port-number (arguments-port-number args)])
-    (when (not port-number)
-      (raise-user-error "Port number not specified."))))
-
-;; Either converts a string to a number or raises a user error.
-(define (string->number-or-error predicate argument)
-  (λ (str)
-    (let ([converted (string->number str)])
-      (if (predicate converted)
-          converted
-          (raise-user-error (format "Invalid ~A: ~A" argument str))))))
-
-;; Either converts a string to a log event level or raises a user error.
-(define (string->log-event-level-or-error argument)
-  (λ (str)
-    (match str
-      ["critical" 'critical]
-      ["error" 'error]
-      ["warning" 'warning]
-      ["info" 'info]
-      ["debug" 'debug]
-      ["trace" 'trace]
-      [else (raise-user-error (format "Invalid ~A: ~A" argument str))])))
+   ([var ("-j" "--worker-count")
+         worker-count
+         #:proc string->number
+         #:guard (integer-in 1 64)]
+    [var ("-w" "--working-dir")
+         working-dir
+         #:guard (λ (value)
+                   (and (path-string? value)
+                        (directory-exists? value)))
+         #:mandatory]
+    [var ("-i" "--interface")
+         interface]
+    [var ("-p" "--port-number")
+         port-number
+         #:proc string->number
+         #:guard port-number?
+         #:mandatory]
+    [var ("-z" "--client-timeout")
+         client-timeout
+         #:proc string->number
+         #:guard positive?]
+    [var ("-l" "--log-level")
+         minimum-log-event-level
+         #:proc string->symbol
+         #:guard log-event-level?])))

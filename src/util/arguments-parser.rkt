@@ -3,7 +3,6 @@
 ;; Chris Vig (chris@invictus.so)
 ;;
 ;; Defines a macro used to parse out a list of arguments into a struct.
-;; TODO: This should be rewritten using syntax-parse.
 ;;
 
 #lang racket
@@ -12,6 +11,7 @@
 
 (require (for-syntax racket))
 (require (for-syntax racket/syntax))
+(require (for-syntax syntax/parse))
 
 ;; -- Provides --
 
@@ -20,73 +20,106 @@
 ;; -- Macros --
 
 (define-syntax (arguments-parser stx)
-  (let* ([syntax-datum (syntax->datum stx)]
-         [struct-id (second syntax-datum)]
-         [struct-expr (third syntax-datum)]
-         [clauses (drop syntax-datum 3)]
-         [args (syntax->datum (generate-temporary "args"))]
-         [result (syntax->datum (generate-temporary "result"))])
-    (datum->syntax
-     stx
-     `(λ (,args)
-        ;; Recursive loop through all of the arguments
-        (let loop ([,args ,args] [,result ,struct-expr])
-          (if (null? ,args)
-              ,result
-              (let ([arg (first ,args)])
-                (cond
-                  ;; Add a cond case for each clause
-                  ,@(map
-                     (λ (clause)
-                       ;; Helper function for "var" clauses
-                       (define (var-clause predicate fld-id [proc #f])
-                         `[,predicate
-                           (if (not (null? (rest ,args)))
-                               (loop
-                                (drop ,args 2)
-                                (struct-copy ,struct-id ,result [,fld-id (if ,proc
-                                                                             (,proc (second ,args))
-                                                                             (second ,args))]))
-                               (raise-user-error (format "Missing argument for ~A" arg)))])
-                       ;; Helper function for "flag" clauses
-                       (define (flag-clause predicate fld-id)
-                         `[,predicate
-                           (loop
-                            (rest ,args)
-                            (struct-copy ,struct-id ,result [,fld-id #t]))])
-                       ;; Match the specific clause type that we got
-                       (match clause
-                         ;; Unprocessed string, allow multiple argument names
-                         [(list 'var (list arg-name ...) fld-id)
-                          (var-clause `(member arg (list ,@arg-name)) fld-id)]
-                         ;; Unprocessed string, single argument name only
-                         [(list 'var arg-name fld-id)
-                          (var-clause `(equal? arg ,arg-name) fld-id)]
-                         ;; Processed/converted value, allow multiple argument names
-                         [(list 'var (list arg-name ...) fld-id proc)
-                          (var-clause `(member arg (list ,@arg-name)) fld-id proc)]
-                         ;; Processed/converted value, single argument name only
-                         [(list 'var arg-name fld-id proc)
-                          (var-clause `(equal? arg ,arg-name) fld-id proc)]
-                         ;; Flag value, allow multiple argument names
-                         [(list 'flag (list arg-name ...) fld-id)
-                          (flag-clause `(member arg (list ,@arg-name)) fld-id)]
-                         ;; Flag value, single argument name only
-                         [(list 'flag arg-name fld-id)
-                          (flag-clause `(equal? arg ,arg-name) fld-id)]))
-                     clauses)
-                  [else (raise-user-error (format "Unknown argument: ~A" arg))]))))))))
 
-;; -- Example --
+  (define-syntax-class struct-id
+    #:description "struct id"
+    (pattern id))
 
-(define (example args-list)
-  (struct example-args (a b c) #:transparent)
-  (define parse (arguments-parser example-args
-                                  (example-args #f #f #f)
-                                  (var ("-a" "--longnamefora") a)
-                                  (var "-b" b string->number)
-                                  (flag ("-c" "--longnameforc") c)))
-  (println (parse args-list)))
+  (define-syntax-class default-struct
+    #:description "default arguments struct expression"
+    (pattern expr))
 
-(module+ main
-  (example (vector->list (current-command-line-arguments))))
+  (define-syntax-class arg-names
+    #:description "argument names"
+    (pattern (names:str ...)))
+
+  (define-syntax-class flag-spec
+    #:description "flag specification"
+    #:datum-literals (flag)
+    (pattern ((~datum flag)
+              arg-names:arg-names
+              field-id:id)))
+
+  (define-syntax-class var-spec
+    #:description "variable specification"
+    #:datum-literals (var)
+    (pattern ((~datum var)
+              arg-names:arg-names
+              field-id:id
+              (~or (~optional (~seq #:proc maybe-proc:expr))
+                   (~optional (~seq #:guard maybe-guard:expr))
+                   (~optional (~seq (~and #:mandatory mandatory-kw))))
+              ...)
+             #:with proc
+             (if (attribute maybe-proc) #'maybe-proc #'identity)
+             #:with guard
+             (if (attribute maybe-guard) #'maybe-guard #'(λ (x) #t))
+             #:with mandatory
+             (if (attribute mandatory-kw) #t #f)))
+
+  (syntax-parse stx
+    [(_ struct-id:struct-id default:expr ((~or flag:flag-spec var:var-spec) ...))
+     (let ([expanded
+            #`(λ (argument-list)
+                ;; Accumulate the result struct
+                (let-values
+                    ([(result used-args)
+                      (let loop ([argument-list argument-list] [result default] [used-args (set)])
+                        (if (null? argument-list)
+                            (values result used-args)
+                            (let*-values
+                                ([(argument-name) (first argument-list)]
+                                 [(argument-list) (rest argument-list)]
+                                 [(argument-list result)
+                                  (match argument-name
+                                    #,@(map (λ (names field-id)
+                                              #`[(or #,@names)
+                                                 (values
+                                                  argument-list
+                                                  (struct-copy struct-id result (#,field-id #t)))])
+                                            (syntax-e #'(flag.arg-names ...))
+                                            (syntax-e #'(flag.field-id ...)))
+                                    #,@(map (λ (names field-id proc guard)
+                                              #`[(or #,@names)
+                                                 (when (null? argument-list)
+                                                   (raise-user-error
+                                                    (format "Argument missing value: ~A" argument-name)))
+                                                 (let* ([value (first argument-list)]
+                                                        [processed-value (#,proc value)])
+                                                   (when (not (#,guard processed-value))
+                                                     (raise-user-error
+                                                      (format "Invalid argument for ~A: ~A"
+                                                              argument-name
+                                                              value)))
+                                                   (values
+                                                    (rest argument-list)
+                                                    (struct-copy struct-id
+                                                                 result
+                                                                 (#,field-id processed-value))))])
+                                            (syntax-e #'(var.arg-names ...))
+                                            (syntax-e #'(var.field-id ...))
+                                            (syntax-e #'(var.proc ...))
+                                            (syntax-e #'(var.guard ...)))
+                                    [else
+                                     (raise-user-error
+                                      (format "Unrecognized argument: ~A" argument-name))])])
+                              (loop argument-list result (set-add used-args argument-name)))))])
+                  ;; Verify all mandatory arguments are accounted for
+                  (let ([mandatory-argument-names
+                         (list
+                          #,@(foldl (λ (names mandatory result)
+                                      (if mandatory
+                                          (cons `(list ,@names) result)
+                                          result))
+                                    null
+                                    (syntax->datum #'(var.arg-names ...))
+                                    (syntax->datum #'(var.mandatory ...))))])
+                    (for ([argument-names (in-list mandatory-argument-names)])
+                      (when (not (ormap (λ (argument-name)
+                                          (set-member? used-args argument-name))
+                                        argument-names))
+                        (raise-user-error (format "Mandatory argument missing: ~A"
+                                                  (string-join argument-names " / "))))))
+                  ;; Return the processed struct
+                  result))])
+       expanded)]))

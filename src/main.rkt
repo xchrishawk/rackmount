@@ -29,7 +29,7 @@
 ;; -- Public Procedures --
 
 (define (main args-list)
-  (let* ([args (get-arguments args-list)])
+  (let* ([args (parse-arguments args-list)])
     (main-log-info "Starting with arguments: ~A" (string-join args-list))
     (let* (;; Create logging thread
            [logger-config (make-logger-config args)]
@@ -96,4 +96,5 @@
 ;; -- Main Module --
 
 (module+ main
-  (main (vector->list (current-command-line-arguments))))
+  (let ([args-list (vector->list (current-command-line-arguments))])
+    (main args-list)))
