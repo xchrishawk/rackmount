@@ -39,13 +39,22 @@
   [manager-state-get-workers (-> opaque-manager-state? (listof worker?))]
 
   ;; Adds a new task handle to the specified worker.
-  [manager-state-add-task-handle (-> opaque-manager-state? worker-identifier? gen:task-handle? opaque-manager-state?)]
+  [manager-state-add-task-handle (-> opaque-manager-state?
+                                     worker-identifier?
+                                     gen:task-handle?
+                                     opaque-manager-state?)]
 
   ;; Removes a task handle from the specified worker.
-  [manager-state-remove-task-handle (-> opaque-manager-state? worker-identifier? gen:task-identifier? opaque-manager-state?)]
+  [manager-state-remove-task-handle (-> opaque-manager-state?
+                                        worker-identifier?
+                                        gen:task-identifier?
+                                        opaque-manager-state?)]
 
   ;; Gets the task handle with the specified identifier from the specified worker.
-  [manager-state-get-task-handle (-> opaque-manager-state? worker-identifier? gen:task-identifier? gen:task-handle?)]))
+  [manager-state-get-task-handle (-> opaque-manager-state?
+                                     worker-identifier?
+                                     gen:task-identifier?
+                                     gen:task-handle?)]))
 
 ;; -- Structs --
 
