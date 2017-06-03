@@ -108,12 +108,9 @@
             [(? log-event? log-event)
              (place-channel-put channel (log-event->list log-event))
              (loop tasks)]
-            ;; Task request from manager
+            ;; Task request from manager - start it
             [(? gen:task-list? task-list)
              (let ([task (list->gen:task task-list)])
-               (worker-log-trace identifier
-                                 "Received task with identifier ~A, starting it..."
-                                 (gen:task-identifier task))
                (gen:task-start task)
                (loop (set-add tasks task)))]
             ;; Task completed - notify manager and remove from task list

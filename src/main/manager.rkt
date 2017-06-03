@@ -58,9 +58,10 @@
         [(? gen:task-handle? task-handle)
          (let ([task-handle-list (gen:task-handle->list task-handle)]
                [worker (manager-state-select-worker state)])
-           (manager-log-trace "Queuing task ~A on worker ~A..."
-                              (gen:task-handle-identifier task-handle)
-                              (worker-identifier worker))
+           (manager-log-trace
+            "Delegating task ~A to worker ~A..."
+            (gen:task-handle-identifier task-handle)
+            (worker-identifier worker))
            (worker-put worker task-handle-list)
            (loop (manager-state-add-task-handle
                   state
@@ -95,15 +96,13 @@
                              worker-identifier
                              task-identifier)])
            (manager-log-trace
-            "Received completion of task ~A from worker ~A. Closing and removing..."
-            task-identifier
-            worker-identifier)
+            "Received completion for task ~A, closing it."
+            task-identifier)
            (gen:task-handle-close task-handle)
-           (loop
-            (manager-state-remove-task-handle
-             state
-             worker-identifier
-             task-identifier)))]
+           (loop (manager-state-remove-task-handle
+                  state
+                  worker-identifier
+                  task-identifier)))]
         ;; Unrecognized message
         [unrecognized-message
          (manager-log-error
