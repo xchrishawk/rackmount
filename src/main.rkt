@@ -16,7 +16,9 @@
 (require "main/logger.rkt")
 (require "main/manager.rkt")
 (require "worker/client-task.rkt")
+(require "util/conversion.rkt")
 (require "util/logging.rkt")
+(require "util/misc.rkt")
 
 ;; -- Provides --
 
@@ -79,7 +81,8 @@
         input-port
         output-port
         (arguments-working-dir args)
-        (* 1000.0 (arguments-client-timeout args)))))))
+        (aif ([timeout (arguments-client-timeout args)])
+             (seconds->milliseconds timeout)))))))
 
 ;; Creates a client task handle and queues it with the manager.
 (define (handle-client-connected manager

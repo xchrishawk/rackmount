@@ -11,6 +11,7 @@
 
 (require "../util/arguments-parser.rkt")
 (require "../util/logging.rkt")
+(require "../worker/client.rkt")
 
 ;; -- Provides --
 
@@ -22,7 +23,7 @@
                      [working-dir path-string?]
                      [interface (or/c string? false?)]
                      [port-number port-number?]
-                     [client-timeout (or/c positive? false?)]
+                     [client-timeout client-timeout?]
                      [minimum-log-event-level log-event-level?])]
 
   ;; Parses and validates arguments from the specified list of strings. Raises a
@@ -71,7 +72,7 @@
     [var ("-z" "--client-timeout")
          client-timeout
          #:proc string->number
-         #:guard positive?]
+         #:guard (and/c real? positive?)]
     [var ("-l" "--log-level")
          minimum-log-event-level
          #:proc string->symbol

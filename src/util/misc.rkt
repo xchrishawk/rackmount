@@ -21,6 +21,9 @@
  ;; Macro for lambda taking any number of arguments and ignoring all of them.
  λ0
 
+ ;; Anaphoric `if` macro.
+ aif
+
  (contract-out
 
   ;; Procedure wrapping (thread-receive-evt) so that the synchronization result
@@ -44,6 +47,18 @@
      (syntax
       (λ unused
         body ...))]))
+
+(define-syntax (aif stx)
+  (define-syntax-class binding-pair
+    #:description "binding pair"
+    (pattern (id:id value:expr)))
+  (syntax-parse stx
+    [(_ (var:binding-pair ...+) body ...+)
+     #`(let (var ...)
+         (if (and var.id ...)
+             (begin
+               body ...)
+             #f))]))
 
 ;; -- Procedures --
 

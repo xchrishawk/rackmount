@@ -127,3 +127,7 @@
 
 ;; Local logging functions.
 (define-local-log worker "Worker" #:with-identifier #t)
+
+
+(module+ main
+  (sync (place-dead-evt (make-worker-place))))

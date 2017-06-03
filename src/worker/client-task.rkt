@@ -36,7 +36,7 @@
                               [input-port input-port?]
                               [output-port output-port?]
                               [working-dir path-string?]
-                              [timeout positive?])]
+                              [timeout client-timeout?])]
 
   ;; -- Serialization --
 
@@ -106,7 +106,7 @@
           input-port?
           output-port?
           path-string?
-          positive?))
+          client-timeout?))
 
 (define (list->client-task lst)
   (apply client-task (flatten (list (rest lst) #f))))

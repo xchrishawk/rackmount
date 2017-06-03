@@ -22,12 +22,15 @@
 (provide
  (contract-out
 
+  ;; Predicate returning #t if the argument is a valid client timeout.
+  [client-timeout? (-> any/c boolean?)]
+
   ;; Runs the main client handling procedure.
   [client-proc (-> string?
                    input-port?
                    output-port?
                    path-string?
-                   (or/c (and/c number? positive?) false?)
+                   client-timeout?
                    any)]))
 
 ;; -- Structs --
@@ -50,6 +53,9 @@
   #:transparent)
 
 ;; -- Public Procedures --
+
+(define client-timeout?
+  (or/c (and/c real? number?) false?))
 
 (define (client-proc identifier input-port output-port working-dir timeout)
   (let ([client (make-client-info identifier input-port output-port working-dir timeout)])
@@ -131,7 +137,20 @@
   (update-client client 'log-request))
 
 (define (handle-log-request client)
-  ;; TODO
+  (let ([event (open-output-string)])
+    (define (add key [value ""] #:indent [indent 0])
+      (display (format "\n~A- ~A: ~A" (make-string indent #\space) key value) event))
+    (display "Received HTTP request with following parameters:" event)
+    (add "Method" (client-info-request-method client))
+    (add "URI" (client-info-request-uri client))
+    (add "HTTP Major Version" (client-info-request-version-major client))
+    (add "HTTP Minor Version" (client-info-request-version-minor client))
+    (add "Headers")
+    (for ([(key value) (in-hash (client-info-request-headers client))])
+      (add key value #:indent 2))
+    (client-log-info
+     (client-info-identifier client)
+     (get-output-string event)))
   (update-client client 'process-request))
 
 (define (handle-process-request client)
