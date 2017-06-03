@@ -13,7 +13,6 @@
 (require "../main/define-thread.rkt")
 (require "../util/logging.rkt")
 (require "../util/misc.rkt")
-(require "../util/sync-loop.rkt")
 
 ;; -- Provides --
 
@@ -64,30 +63,29 @@
                           (add "Max Wait Count" (listener-config-max-wait-count config))
                           (get-output-string text)))
     ;; Run the main loop
-    (sync-loop ([config config])
-               ([(wrapped-thread-receive-evt) listener-proc-thread-message]
-                [listener listener-proc-client-connected]))
+    (let loop ()
+      (sync
+       ;; Received thread message
+       (handle-evt
+        (wrapped-thread-receive-evt)
+        (match-lambda
+          ['shutdown (void)]
+          [unrecognized-message
+           (listener-log-error
+            "Received unknown thread message (~A). Ignoring and continuing..."
+            unrecognized-message)]))
+       ;; New client connected
+       (handle-evt
+        listener
+        (λ0
+         (let-values ([(input-port output-port) (tcp-accept listener)])
+           (listener-log-trace "New client accepted.")
+           ((listener-config-client-connected config) input-port output-port)
+           (loop))))))
     ;; Shut down the listener
     (tcp-close listener)
     (listener-log-debug "Listener closed."))
   (listener-log-trace "Listener thread terminating."))
 
-;; Process a received thread message.
-(define (listener-proc-thread-message config message)
-  (match message
-    ;; Shutdown command - stop looping
-    ['shutdown (values config #f)]
-    ;; Unknown message?
-    [else
-     (listener-log-error "Received unknown thread message (~A). Ignoring and continuing..." message)
-     (values config #t)]))
-
-;; Process a newly connected client.
-(define (listener-proc-client-connected config listener)
-  (let*-values ([(input-port output-port) (tcp-accept listener)])
-    (listener-log-trace "New client accepted.")
-    ((listener-config-client-connected config) input-port output-port))
-  (values config #t))
-
-;; Local logging procedure.
+;; Local logging function.
 (define-local-log listener "Listener")

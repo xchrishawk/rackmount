@@ -18,6 +18,9 @@
  ;; Macro for starting a thread.
  thread-start
 
+ ;; Macro for lambda taking any number of arguments and ignoring all of them.
+ λ0
+
  (contract-out
 
   ;; Procedure wrapping (thread-receive-evt) so that the synchronization result
@@ -32,6 +35,12 @@
      (syntax
       (thread (λ () body ...)))]))
 
+(define-syntax (λ0 stx)
+  (syntax-case stx ()
+    [(_ body ...)
+     (syntax
+      (λ unused
+        body ...))]))
 
 ;; -- Procedures --
 

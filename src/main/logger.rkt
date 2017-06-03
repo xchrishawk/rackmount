@@ -13,7 +13,6 @@
 (require "../main/define-thread.rkt")
 (require "../util/logging.rkt")
 (require "../util/misc.rkt")
-(require "../util/sync-loop.rkt")
 
 ;; -- Provides --
 
@@ -39,23 +38,25 @@
 
 ;; Main thread for the logger.
 (define (logger-proc config)
-  (sync-loop ([config config])
-             ([(wrapped-thread-receive-evt) logger-proc-thread-message]
-              [(log-event-dequeue-evt) logger-proc-log-event])))
-
-;; Processes a thread message.
-(define (logger-proc-thread-message config message)
-  (match message
-    ;; Shutdown command - stop looping
-    ['shutdown (values config #f)]
-    ;; Unknown message - ignore it
-    [else (values config #t)]))
+  (let loop ()
+    (sync
+     ;; Received thread message.
+     (handle-evt
+      (wrapped-thread-receive-evt)
+      (match-lambda
+        ['shutdown (void)]
+        [unrecognized-message (loop)]))
+     ;; Received logged event.
+     (handle-evt
+      (log-event-dequeue-evt)
+      (λ (log-event)
+        (proc-log-event config log-event)
+        (loop))))))
 
 ;; Processes a logged event. For now, just print it to the output port. Eventually they
 ;; will get saved to some type of persistent store.
-(define (logger-proc-log-event config log-event)
+(define (proc-log-event config log-event)
   (when (log-event-level-enabled? (log-event-level log-event)
                                   (logger-config-minimum-log-event-level config))
     (displayln (log-event->string log-event))
-    (newline))
-  (values config #t))
+    (newline)))
