@@ -7,9 +7,9 @@
 ;;
 ;; The general structure is:
 ;;
-;; - opaque-manager-state
-;;   - worker-lookup (hash of worker-identifier? -> opaque-worker-state)
-;; - opaque-worker-state
+;; - manager-state
+;;   - worker-lookup (hash of worker-identifier? -> worker-state)
+;; - worker-state
 ;;   - worker (worker?)
 ;;   - task-lookup (hash of gen:task-identifer? -> gen:task-handle)
 ;;
@@ -27,93 +27,101 @@
  (contract-out
 
   ;; Creates a new manager state object.
-  [manager-state (-> (listof worker?) opaque-manager-state?)]
+  [rename make-manager-state manager-state (-> (listof worker?) manager-state?)]
 
   ;; Selects the appropriate worker for the next ask.
-  [manager-state-select-worker (-> opaque-manager-state? worker?)]
+  [manager-state-select-worker (-> manager-state? worker?)]
 
   ;; Gets the worker with the specified identifier.
-  [manager-state-get-worker (-> opaque-manager-state? worker-identifier? worker?)]
+  [manager-state-worker (-> manager-state? worker-identifier? worker?)]
 
   ;; Gets a list of all workers.
-  [manager-state-get-workers (-> opaque-manager-state? (listof worker?))]
+  [manager-state-workers (-> manager-state? (listof worker?))]
+
+  ;; Gets a list of the get events for all workers.
+  [manager-state-worker-get-evts (-> manager-state? (listof evt?))]
 
   ;; Adds a new task handle to the specified worker.
-  [manager-state-add-task-handle (-> opaque-manager-state?
+  [manager-state-add-task-handle (-> manager-state?
                                      worker-identifier?
                                      gen:task-handle?
-                                     opaque-manager-state?)]
+                                     manager-state?)]
 
   ;; Removes a task handle from the specified worker.
-  [manager-state-remove-task-handle (-> opaque-manager-state?
+  [manager-state-remove-task-handle (-> manager-state?
                                         worker-identifier?
                                         gen:task-identifier?
-                                        opaque-manager-state?)]
+                                        manager-state?)]
 
   ;; Gets the task handle with the specified identifier from the specified worker.
-  [manager-state-get-task-handle (-> opaque-manager-state?
+  [manager-state-get-task-handle (-> manager-state?
                                      worker-identifier?
                                      gen:task-identifier?
                                      gen:task-handle?)]))
 
 ;; -- Structs --
 
-(struct opaque-manager-state (worker-lookup))
+(struct manager-state (worker-lookup))
 
-(struct opaque-worker-state (worker task-lookup))
+(struct worker-state (worker task-lookup))
 
 ;; -- Public Procedures --
 
-(define (manager-state worker-list)
-  (opaque-manager-state
+(define (make-manager-state worker-list)
+  (manager-state
    (for/hash ([worker (in-list worker-list)])
      (values (worker-identifier worker)
-             (opaque-worker-state worker (hash))))))
+             (worker-state worker (hash))))))
 
-(define (manager-state-select-worker manager-state)
+(define (manager-state-select-worker state)
   ;; For now, just pick one at random. TODO: better selection
-  (let ([worker-states (hash-values (opaque-manager-state-worker-lookup manager-state))])
-    (opaque-worker-state-worker (list-ref worker-states (random (length worker-states))))))
+  (let ([worker-states (hash-values (manager-state-worker-lookup state))])
+    (worker-state-worker (list-ref worker-states (random (length worker-states))))))
 
-(define (manager-state-get-worker manager-state worker-identifier)
-  (let* ([worker-lookup (opaque-manager-state-worker-lookup manager-state)]
+(define (manager-state-worker state worker-identifier)
+  (let* ([worker-lookup (manager-state-worker-lookup state)]
          [worker-state (hash-ref worker-lookup worker-identifier)])
-    (opaque-worker-state-worker worker-state)))
+    (worker-state-worker worker-state)))
 
-(define (manager-state-get-workers manager-state)
-  (map opaque-worker-state-worker (hash-values (opaque-manager-state-worker-lookup manager-state))))
+(define (manager-state-workers state)
+  (map
+   worker-state-worker
+   (hash-values (manager-state-worker-lookup state))))
 
-(define (manager-state-add-task-handle manager-state worker-identifier task-handle)
-  (let* ([old-worker-lookup (opaque-manager-state-worker-lookup manager-state)]
+(define (manager-state-worker-get-evts state)
+  (map worker-get-evt (manager-state-workers state)))
+
+(define (manager-state-add-task-handle state worker-identifier task-handle)
+  (let* ([old-worker-lookup (manager-state-worker-lookup state)]
          [old-worker-state (hash-ref old-worker-lookup worker-identifier)]
          [new-worker-state (worker-state-add-task-handle old-worker-state task-handle)]
          [new-worker-lookup (hash-set old-worker-lookup worker-identifier new-worker-state)])
-    (struct-copy opaque-manager-state manager-state [worker-lookup new-worker-lookup])))
+    (struct-copy manager-state state [worker-lookup new-worker-lookup])))
 
-(define (manager-state-remove-task-handle manager-state worker-identifier task-handle-identifier)
-  (let* ([old-worker-lookup (opaque-manager-state-worker-lookup manager-state)]
+(define (manager-state-remove-task-handle state worker-identifier task-handle-identifier)
+  (let* ([old-worker-lookup (manager-state-worker-lookup state)]
          [old-worker-state (hash-ref old-worker-lookup worker-identifier)]
          [new-worker-state (worker-state-remove-task-handle old-worker-state task-handle-identifier)]
          [new-worker-lookup (hash-set old-worker-lookup worker-identifier new-worker-state)])
-    (struct-copy opaque-manager-state manager-state [worker-lookup new-worker-lookup])))
+    (struct-copy manager-state state [worker-lookup new-worker-lookup])))
 
-(define (manager-state-get-task-handle manager-state worker-identifier task-handle-identifier)
-  (let* ([worker-lookup (opaque-manager-state-worker-lookup manager-state)]
+(define (manager-state-get-task-handle state worker-identifier task-handle-identifier)
+  (let* ([worker-lookup (manager-state-worker-lookup state)]
          [worker-state (hash-ref worker-lookup worker-identifier)])
     (worker-state-get-task-handle worker-state task-handle-identifier)))
 
 ;; -- Private Procedures --
 
-(define (worker-state-add-task-handle worker-state task-handle)
-  (let* ([old-task-lookup (opaque-worker-state-task-lookup worker-state)]
+(define (worker-state-add-task-handle state task-handle)
+  (let* ([old-task-lookup (worker-state-task-lookup state)]
          [new-task-lookup (hash-set old-task-lookup (gen:task-handle-identifier task-handle) task-handle)])
-    (struct-copy opaque-worker-state worker-state [task-lookup new-task-lookup])))
+    (struct-copy worker-state state [task-lookup new-task-lookup])))
 
-(define (worker-state-remove-task-handle worker-state task-handle-identifier)
-  (let* ([old-task-lookup (opaque-worker-state-task-lookup worker-state)]
+(define (worker-state-remove-task-handle state task-handle-identifier)
+  (let* ([old-task-lookup (worker-state-task-lookup state)]
          [new-task-lookup (hash-remove old-task-lookup task-handle-identifier)])
-    (struct-copy opaque-worker-state worker-state [task-lookup new-task-lookup])))
+    (struct-copy worker-state state [task-lookup new-task-lookup])))
 
-(define (worker-state-get-task-handle worker-state task-handle-identifier)
-  (let* ([task-lookup (opaque-worker-state-task-lookup worker-state)])
+(define (worker-state-get-task-handle state task-handle-identifier)
+  (let* ([task-lookup (worker-state-task-lookup state)])
     (hash-ref task-lookup task-handle-identifier)))
