@@ -66,28 +66,37 @@
 
 ;; Creates the configuration struct for the listener.
 (define (make-listener-config args manager)
-  (let* ([identifier-generator (client-task-identifier-generator)]
-         [client-connected (λ (input-port output-port)
-                             (handle-client-connected manager
-                                                      identifier-generator
-                                                      input-port
-                                                      output-port))])
-    (listener-config (arguments-interface args)
-                     (arguments-port-number args)
-                     4   ; max wait count
-                     #t  ; reusable
-                     client-connected)))
+  (let* ([identifier-generator (client-task-identifier-generator)])
+    (listener-config
+     (arguments-interface args)
+     (arguments-port-number args)
+     4   ; max wait count
+     #t  ; reusable
+     (λ (input-port output-port)
+       (handle-client-connected
+        manager
+        identifier-generator
+        input-port
+        output-port
+        (arguments-working-dir args)
+        (* 1000.0 (arguments-client-timeout args)))))))
 
 ;; Creates a client task handle and queues it with the manager.
 (define (handle-client-connected manager
                                  identifier-generator
                                  input-port
-                                 output-port)
-  (let ([task-handle (client-task-handle (identifier-generator)
-                                         input-port
-                                         output-port)])
-    (main-log-trace "Created client task with identifier ~A. Queuing with manager..."
-                    (client-task-handle-identifier task-handle))
+                                 output-port
+                                 working-dir
+                                 timeout)
+  (let ([task-handle (client-task-handle
+                      (identifier-generator)
+                      input-port
+                      output-port
+                      working-dir
+                      timeout)])
+    (main-log-trace
+     "Created client task with identifier ~A. Queuing with manager..."
+     (client-task-handle-identifier task-handle))
     (manager-queue-task-handle manager task-handle)))
 
 ;; Local logging procedures
