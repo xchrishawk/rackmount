@@ -25,7 +25,10 @@
 
   ;; Procedure wrapping (thread-receive-evt) so that the synchronization result
   ;; is the value returned by (thread-receive).
-  [wrapped-thread-receive-evt (-> evt?)]))
+  [wrapped-thread-receive-evt (-> evt?)]
+
+  ;; Returns #t if the specified list has length at least N.
+  [length-at-least? (-> list? exact-nonnegative-integer? boolean?)]))
 
 ;; -- Macros --
 
@@ -49,3 +52,9 @@
    (thread-receive-evt)
    (λ (evt)
      (thread-receive))))
+
+(define (length-at-least? lst n)
+  (cond
+    [(zero? n) #t]
+    [(null? lst) #f]
+    [else (length-at-least? (rest lst) (sub1 n))]))
