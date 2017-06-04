@@ -10,6 +10,7 @@
 ;; -- Requires --
 
 (require "../tasks/task.rkt")
+(require "../util/logging.rkt")
 (require "../util/thread-util.rkt")
 
 ;; -- Provides --
@@ -30,12 +31,14 @@
      (example-task-handle-identifier task-handle))
 
    (define (gen:task-handle-initialize task-handle)
-     (displayln
-      (format "Initializing task ~A!" (example-task-handle-identifier task-handle))))
+     (example-task-log-trace
+      (example-task-handle-identifier task-handle)
+      "Initializing task!"))
 
    (define (gen:task-handle-close task-handle)
-     (displayln
-      (format "Closing task ~A!" (example-task-handle-identifier task-handle))))
+     (example-task-log-trace
+      (example-task-handle-identifier task-handle)
+      "Closing task!"))
 
    (define (gen:task-handle->gen:task task-handle)
      (example-task
@@ -54,10 +57,10 @@
      (let* ([identifier (example-task-identifier task)]
             [duration (example-task-duration task)]
             [thd (thread-start
-                  (displayln (format "Task ~A started." identifier))
+                  (example-task-log-trace identifier "Task started.")
                   (if (sync/timeout duration (thread-receive-evt))
-                      (displayln (format "Task ~A cancelled." identifier))
-                      (displayln (format "Task ~A completed." identifier))))])
+                      (example-task-log-trace identifier "Task cancelled.")
+                      (example-task-log-trace identifier "Task completed.")))])
        (set-example-task-thread! task thd)))
 
    (define (gen:task-cancel task #:synchronous [synchronous #t])
@@ -73,3 +76,8 @@
        (if thd
            (wrap-evt thd (λ (evt) task))
            never-evt)))])
+
+;; -- Private Procedures --
+
+;; Local logging procedures.
+(define-local-log example-task "Example Task" #:with-identifier #t)
