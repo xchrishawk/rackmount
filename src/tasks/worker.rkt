@@ -86,10 +86,9 @@
     (worker identifier pl)))
 
 (define (worker-enqueue-task worker task-handle)
-  (worker-put worker
-              (list
-               'enqueue-task
-               (gen:task-handle->place-message task-handle))))
+  (worker-put
+   worker
+   (list 'enqueue-task (gen:task-handle->place-message task-handle))))
 
 (define (worker-terminate worker
                           #:immediately [immediately #t]
@@ -114,8 +113,20 @@
   (place-channel-put (worker-place worker) message))
 
 (define (worker-main)
+
+  ;; Helper procedure - notify manager that task is complete
+  (define (notify-task-completed task-identifier)
+    (place-channel-put
+     (current-worker-pch-to-manager)
+     (list
+      'task-completed
+      (current-worker-identifier)
+      task-identifier)))
+
+  ;; Main loop - wait for an event
   (let loop ([tasks (set)] [terminating #f])
     (sync
+
      ;; Event from manager?
      (handle-evt
       (current-worker-pch-from-manager)
@@ -131,24 +142,26 @@
            (loop tasks #t))]
         ;; Received command (enqueue-task)
         [(list 'enqueue-task task-pm)
-         (let* ([task-handle (place-message->gen:task-handle task-pm)]
-                [task (gen:task-handle->gen:task task-handle)])
-           (gen:task-start task)
-           (loop (set-add tasks task) terminating))]
+         (let ([task-handle (place-message->gen:task-handle task-pm)])
+           (if (not terminating)
+               ;; We're not already terminating - go ahead and start the task
+               (let ([task (gen:task-handle->gen:task task-handle)])
+                 (gen:task-start task)
+                 (loop (set-add tasks task) terminating))
+               ;; We are terminating - reject the task
+               (begin
+                 (notify-task-completed (gen:task-handle-identifier task-handle))
+                 (loop tasks terminating))))]
         ;; Unrecognized message - log and continue looping
         [unrecognized-message
          (loop tasks terminating)]))
+
      ;; Completed task?
      (handle-evt
       (apply choice-evt (set-map tasks gen:task-completed-evt))
       (λ (task)
         ;; Notify manager that task is completed
-        (place-channel-put
-         (current-worker-pch-to-manager)
-         (list
-          'task-completed
-          (current-worker-identifier)
-          (gen:task-identifier task)))
+        (notify-task-completed (gen:task-identifier task))
         ;; Loop only as long as either we're not terminating or there are tasks left
         (let ([updated-tasks (set-remove tasks task)])
           (when (not (and terminating (set-empty? updated-tasks)))
@@ -163,43 +176,85 @@
   (require rackunit)
   (require "../tasks/example-task.rkt")
 
+  ;; -- Helpers --
+
+  (define worker-identifier "Test Worker")
+  (define task-identifier "Example Task")
+
+  (define (make-worker-and-channel)
+    (let*-values ([(our-endpoint their-endpoint) (place-channel)]
+                  [(worker) (make-worker worker-identifier their-endpoint)])
+      (values worker our-endpoint)))
+
+  (define (make-task-handle [duration #f])
+    (example-task-handle task-identifier duration))
+
+  (define (check-worker-alive worker [timeout 0.5])
+    (check-false (sync/timeout timeout (worker-terminated-evt worker))))
+
+  (define (check-worker-dead worker [timeout 0.5])
+    (check-equal? (sync/timeout timeout (worker-terminated-evt worker)) worker))
+
   ;; -- Test Cases --
 
   ;; Worker Lifecycle
-  (let*-values ([(worker-identifier) "Test Worker"]
-                [(our-endpoint their-endpoint) (place-channel)]
-                [(worker) (make-worker worker-identifier their-endpoint)])
-    ;; Verify the worker is alive
-    (check-false (sync/timeout 0.5 (worker-terminated-evt worker)))
-    ;; Verify the worker dies when terminated
+  (let-values ([(worker channel) (make-worker-and-channel)])
+    (check-worker-alive worker)
     (worker-terminate worker #:synchronous #f)
-    (check-equal? (sync/timeout 5.0 (worker-terminated-evt worker)) worker))
+    (check-worker-dead worker 5.0))
 
   ;; Worker Task Management
-  (let*-values ([(worker-identifier) "Test Worker"]
-                [(task-identifier) "Example Task"]
-                [(our-endpoint their-endpoint) (place-channel)]
-                [(worker) (make-worker worker-identifier their-endpoint)])
+  (let-values ([(worker channel) (make-worker-and-channel)])
     ;; Enqueue a task with the worker
-    (worker-enqueue-task
-     worker
-     (example-task-handle task-identifier "This Is A Message" #f))
-    ;; Wait to get back confirmation that task was completed
-    (let ([response (sync/timeout 5.0 our-endpoint)])
+    (worker-enqueue-task worker (make-task-handle 3.0))
+    ;; Verify we don't get completion back before the task has completed
+    (check-false (sync/timeout 2.5 channel))
+    ;; Verify we *do* get completion back after the task has completed
+    (let ([response (sync/timeout 2.0 channel)])
       (check-equal? response (list 'task-completed worker-identifier task-identifier)))
     (worker-terminate worker))
 
   ;; Worker Task Cancellation - Immediate
-  (let*-values ([(worker-identifier) "Test Worker"]
-                [(task-identifier) "Example Task"]
-                [(our-endpoint their-endpoint) (place-channel)]
-                [(worker) (make-worker worker-identifier their-endpoint)])
-    ;; Enqueue task
-    (worker-enqueue-task
-     worker
-     (example-task-handle task-identifier "Looping!" #t))
-    (check-false (sync/timeout 2.0 (worker-terminated-evt worker)))
+  (let-values ([(worker channel) (make-worker-and-channel)])
+    ;; Enqueue task with indefinite duration
+    (worker-enqueue-task worker (make-task-handle #f))
+    ;; Verify worker continues to run
+    (check-worker-alive worker 2.0)
+    ;; Terminate the worker immediately
     (worker-terminate worker #:immediately #t #:synchronous #f)
-    (let ([response (sync/timeout 0.5 our-endpoint)])
+    ;; Verify we get back confirmation that the task was cancelled
+    (let ([response (sync/timeout 0.5 channel)])
       (check-equal? response (list 'task-completed worker-identifier task-identifier)))
-    (check-equal? (sync/timeout 0.5 (worker-terminated-evt worker)) worker)))
+    ;; Verify that the worker terminates
+    (check-worker-dead worker))
+
+  ;; Worker Task Cancellation - Not Immediate
+  (let-values ([(worker channel) (make-worker-and-channel)])
+    ;; Enqueue task with 2 second duration
+    (worker-enqueue-task worker (make-task-handle 2.0))
+    ;; Terminate worker with immediate set to #f
+    (worker-terminate worker #:immediately #f #:synchronous #f)
+    ;; Verify worker continues to run in the meantime
+    (check-worker-alive worker 1.0)
+    ;; Verify we get back confirmation the the task completed
+    (let ([response (sync/timeout 2.0 channel)])
+      (check-equal? response (list 'task-completed worker-identifier task-identifier)))
+    ;; Verify that the worker is now terminated
+    (check-worker-dead worker))
+
+  ;; Worker Task Rejection
+  (let-values ([(worker channel) (make-worker-and-channel)])
+    ;; Enqueue task with 4 second duration
+    (worker-enqueue-task worker (example-task-handle "Accepted Task" 4.0))
+    ;; Terminate worker with immediate set to #f
+    (worker-terminate worker #:immediately #f #:synchronous #f)
+    ;; Enqueue new task which should be rejected
+    (worker-enqueue-task worker (example-task-handle "Rejected Task" #f))
+    ;; Verify that we immediately get back a completion for the rejected task
+    (let ([response (sync/timeout 1.0 channel)])
+      (check-equal? response (list 'task-completed worker-identifier "Rejected Task")))
+    ;; Verify that we get back a completion for the accepted task once it dies naturally
+    (let ([response (sync/timeout 6.0 channel)])
+      (check-equal? response (list 'task-completed worker-identifier "Accepted Task")))
+    ;; Verify worker is now terminated
+    (check-worker-dead worker)))
