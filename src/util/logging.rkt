@@ -37,9 +37,11 @@
   ;; Predicate returning #t if the argument is a valid log level.
   [log-event-level? (-> any/c boolean?)]
 
-  ;; Returns #t if the specified log event level is enabled, based on the
-  ;; specified minimum log event level.
-  [log-event-level-enabled? (-> log-event-level? log-event-level? boolean?)]))
+  ;; Returns #t if the specified log event level is enabled.
+  [log-event-level-enabled? (-> log-event-level? boolean?)]
+
+  ;; Parameter defining the current minimum log level.
+  [minimum-log-event-level (parameter/c log-event-level?)]))
 
 ;; -- Structs --
 
@@ -51,6 +53,9 @@
   #:transparent)
 
 ;; -- Objects --
+
+(define minimum-log-event-level
+  (make-parameter 'trace))
 
 ;; Lookup table for log levels.
 (define log-event-levels (hash 'critical (cons 0 "Critical")
@@ -79,9 +84,9 @@
 (define (log-event-level? x)
   (if (hash-ref log-event-levels x #f) #t #f))
 
-(define (log-event-level-enabled? log-event-level minimum-log-event-level)
+(define (log-event-level-enabled? log-event-level)
   (<= (log-event-level->integer log-event-level)
-      (log-event-level->integer minimum-log-event-level)))
+      (log-event-level->integer (minimum-log-event-level))))
 
 ;; -- Private Procedures --
 
@@ -111,8 +116,22 @@
 ;; -- Macros --
 
 (define-syntax (define-local-log stx)
+
+  (define-syntax-class log-name
+    #:description "log name"
+    (pattern id))
+
+  (define-syntax-class log-category
+    #:description "log category"
+    (pattern str))
+
   (syntax-parse stx
-    [(_ name:id category:str (~optional (~seq #:with-identifier with-identifier:boolean)))
+    [(_ name:log-name
+        category:log-category
+        (~optional
+         (~or
+          (~seq #:require-identifier require-identifier:boolean)
+          (~seq #:identifier identifier:expr))))
      (let ([name-string (symbol->string (syntax->datum #'name))])
        (with-syntax ([fn-log-critical (make-syntax/symbol stx "~A-log-critical" name-string)]
                      [fn-log-error (make-syntax/symbol stx "~A-log-error" name-string)]
@@ -120,38 +139,58 @@
                      [fn-log-info (make-syntax/symbol stx "~A-log-info" name-string)]
                      [fn-log-debug (make-syntax/symbol stx "~A-log-debug" name-string)]
                      [fn-log-trace (make-syntax/symbol stx "~A-log-trace" name-string)])
-         (define (make-log-fn name level)
+         (define (make-log-fn-no-identifier name level)
            #`(define (#,name fmt . v)
-               (let ([event (log-event (current-inexact-milliseconds)
-                                       (quote #,level)
-                                       category
-                                       #f
-                                       (apply format fmt v))])
-                 (log-event-report event))))
-         (define (make-log-identifier-fn name level)
-           #`(define (#,name identifier fmt . v)
-               (let ([event (log-event (current-inexact-milliseconds)
-                                       (quote #,level)
-                                       category
-                                       identifier
-                                       (apply format fmt v))])
-                 (log-event-report event))))
-         (let* ([with-identifier (if (attribute with-identifier)
-                                     (syntax->datum (attribute with-identifier))
-                                     #f)]
-                [result (if with-identifier
-                            #`(begin
-                                #,(make-log-identifier-fn #'fn-log-critical 'critical)
-                                #,(make-log-identifier-fn #'fn-log-error 'error)
-                                #,(make-log-identifier-fn #'fn-log-warning 'warning)
-                                #,(make-log-identifier-fn #'fn-log-info 'info)
-                                #,(make-log-identifier-fn #'fn-log-debug 'debug)
-                                #,(make-log-identifier-fn #'fn-log-trace 'trace))
-                            #`(begin
-                                #,(make-log-fn #'fn-log-critical 'critical)
-                                #,(make-log-fn #'fn-log-error 'error)
-                                #,(make-log-fn #'fn-log-warning 'warning)
-                                #,(make-log-fn #'fn-log-info 'info)
-                                #,(make-log-fn #'fn-log-debug 'debug)
-                                #,(make-log-fn #'fn-log-trace 'trace)))])
+               (when (log-event-level-enabled? (quote #,level))
+                 (let ([event (log-event (current-inexact-milliseconds)
+                                         (quote #,level)
+                                         category
+                                         #f
+                                         (apply format fmt v))])
+                   (log-event-report event)))))
+         (define (make-log-fn-implicit-identifier name level)
+           #`(define (#,name fmt . v)
+               (when (log-event-level-enabled? (quote #,level))
+                 (let ([event (log-event (current-inexact-milliseconds)
+                                         (quote #,level)
+                                         category
+                                         identifier
+                                         (apply format fmt v))])
+                   (log-event-report event)))))
+         (define (make-log-fn-required-identifier name level)
+           #`(define (#,name #,(quote identifier) fmt . v)
+               (when (log-event-level-enabled? (quote #,level))
+                 (let ([event (log-event (current-inexact-milliseconds)
+                                         (quote #,level)
+                                         category
+                                         #,(quote identifier)
+                                         (apply format fmt v))])
+                   (log-event-report event)))))
+         (let ([result
+                (cond
+                  [(and (attribute require-identifier)
+                        (syntax->datum #'require-identifier))
+                   #`(begin
+                       #,(make-log-fn-required-identifier #'fn-log-critical 'critical)
+                       #,(make-log-fn-required-identifier #'fn-log-error 'error)
+                       #,(make-log-fn-required-identifier #'fn-log-warning 'warning)
+                       #,(make-log-fn-required-identifier #'fn-log-info 'info)
+                       #,(make-log-fn-required-identifier #'fn-log-debug 'debug)
+                       #,(make-log-fn-required-identifier #'fn-log-trace 'trace))]
+                  [(attribute identifier)
+                   #`(begin
+                       #,(make-log-fn-implicit-identifier #'fn-log-critical 'critical)
+                       #,(make-log-fn-implicit-identifier #'fn-log-error 'error)
+                       #,(make-log-fn-implicit-identifier #'fn-log-warning 'warning)
+                       #,(make-log-fn-implicit-identifier #'fn-log-info 'info)
+                       #,(make-log-fn-implicit-identifier #'fn-log-debug 'debug)
+                       #,(make-log-fn-implicit-identifier #'fn-log-trace 'trace))]
+                  [else
+                   #`(begin
+                       #,(make-log-fn-no-identifier #'fn-log-critical 'critical)
+                       #,(make-log-fn-no-identifier #'fn-log-error 'error)
+                       #,(make-log-fn-no-identifier #'fn-log-warning 'warning)
+                       #,(make-log-fn-no-identifier #'fn-log-info 'info)
+                       #,(make-log-fn-no-identifier #'fn-log-debug 'debug)
+                       #,(make-log-fn-no-identifier #'fn-log-trace 'trace))])])
            result)))]))

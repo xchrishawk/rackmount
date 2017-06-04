@@ -80,4 +80,4 @@
 ;; -- Private Procedures --
 
 ;; Local logging procedures.
-(define-local-log example-task "Example Task" #:with-identifier #t)
+(define-local-log example-task "Example Task" #:require-identifier #t)
