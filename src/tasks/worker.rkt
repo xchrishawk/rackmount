@@ -8,6 +8,11 @@
 
 #lang racket
 
+;; -- Requires --
+
+(require "../tasks/task.rkt")
+(require "../tasks/task-serialization.rkt")
+
 ;; -- Provides --
 
 (provide
@@ -28,6 +33,9 @@
   ;; Returns the identifier for the specified worker.
   [worker-identifier (-> worker? worker-identifier?)]
 
+  ;; Enqueues a task with the worker.
+  [worker-enqueue-task (-> worker? gen:task-handle? void?)]
+
   ;; Terminates a worker. If synchronous is #t, this method will block until
   ;; (worker-terminated-evt) is ready for synchronization.
   [worker-terminate (->i ([worker worker?])
@@ -35,7 +43,8 @@
                          [result void?])]
 
   ;; Returns an event which is ready for synchronization when the place for the
-  ;; specified worker is no longer running.
+  ;; specified worker is no longer running. The synchronization result is the
+  ;; worker object itself.
   [worker-terminated-evt (-> worker? evt?)]
 
   ;; -- Utility --
@@ -76,11 +85,16 @@
     ;; Return struct
     (worker identifier pl)))
 
-(define (worker-put worker message)
-  (place-channel-put (worker-place worker) message))
+(define (worker-enqueue-task worker task-handle)
+  (worker-put worker
+              (list
+               'enqueue-task
+               (gen:task-handle->place-message task-handle))))
 
-(define (worker-terminate worker #:synchronous [synchronous #t])
-  (worker-put worker 'terminate)
+(define (worker-terminate worker
+                          #:immediately [immediately #t]
+                          #:synchronous [synchronous #t])
+  (worker-put worker (list 'terminate immediately))
   (when synchronous
     (sync (worker-terminated-evt worker)))
   (void))
@@ -96,18 +110,49 @@
 
 ;; -- Private Procedures --
 
+(define (worker-put worker message)
+  (place-channel-put (worker-place worker) message))
+
 (define (worker-main)
-  (displayln (format "TEMP: Worker (~A) started." (current-worker-identifier)))
-  (let loop ()
+  (let loop ([tasks (set)] [terminating #f])
     (sync
+     ;; Event from manager?
      (handle-evt
       (current-worker-pch-from-manager)
       (match-lambda
-        ['terminate (void)]
+        ;; Received command (terminate)
+        [(list 'terminate (? boolean? immediately))
+         ;; If we're terminating immediately, cancel all tasks
+         (when immediately
+           (for ([task (in-set tasks)])
+             (gen:task-cancel task #:synchronous #f)))
+         ;; If there's still tasks, loop until they're done
+         (when (not (set-empty? tasks))
+           (loop tasks #t))]
+        ;; Received command (enqueue-task)
+        [(list 'enqueue-task task-pm)
+         (let* ([task-handle (place-message->gen:task-handle task-pm)]
+                [task (gen:task-handle->gen:task task-handle)])
+           (gen:task-start task)
+           (loop (set-add tasks task) terminating))]
+        ;; Unrecognized message - log and continue looping
         [unrecognized-message
-         (displayln (format "I am ~A and I got: ~A" (current-worker-identifier) unrecognized-message))
-         (loop)]))))
-  (displayln (format "TEMP: Worker (~A) terminated." (current-worker-identifier))))
+         (loop tasks terminating)]))
+     ;; Completed task?
+     (handle-evt
+      (apply choice-evt (set-map tasks gen:task-completed-evt))
+      (λ (task)
+        ;; Notify manager that task is completed
+        (place-channel-put
+         (current-worker-pch-to-manager)
+         (list
+          'task-completed
+          (current-worker-identifier)
+          (gen:task-identifier task)))
+        ;; Loop only as long as either we're not terminating or there are tasks left
+        (let ([updated-tasks (set-remove tasks task)])
+          (when (not (and terminating (set-empty? updated-tasks)))
+            (loop updated-tasks terminating))))))))
 
 ;; -- Tests --
 
@@ -116,18 +161,45 @@
   ;; -- Requires --
 
   (require rackunit)
-
-  ;; -- Helpers --
-
-  (define (worker-and-pch [identifier "Example"])
-    (let*-values ([(our-pch their-pch) (place-channel)]
-                  [(worker) (make-worker identifier their-pch)])
-      (values worker our-pch)))
+  (require "../tasks/example-task.rkt")
 
   ;; -- Test Cases --
 
-  (test-case "Lifecycle"
-    (let-values ([(worker pch) (worker-and-pch)])
-      (check-false (sync/timeout 1.0 (worker-terminated-evt worker)))
-      (worker-terminate worker #:synchronous #f)
-      (check-equal? (sync/timeout 5.0 (worker-terminated-evt worker)) worker))))
+  ;; Worker Lifecycle
+  (let*-values ([(worker-identifier) "Test Worker"]
+                [(our-endpoint their-endpoint) (place-channel)]
+                [(worker) (make-worker worker-identifier their-endpoint)])
+    ;; Verify the worker is alive
+    (check-false (sync/timeout 0.5 (worker-terminated-evt worker)))
+    ;; Verify the worker dies when terminated
+    (worker-terminate worker #:synchronous #f)
+    (check-equal? (sync/timeout 5.0 (worker-terminated-evt worker)) worker))
+
+  ;; Worker Task Management
+  (let*-values ([(worker-identifier) "Test Worker"]
+                [(task-identifier) "Example Task"]
+                [(our-endpoint their-endpoint) (place-channel)]
+                [(worker) (make-worker worker-identifier their-endpoint)])
+    ;; Enqueue a task with the worker
+    (worker-enqueue-task
+     worker
+     (example-task-handle task-identifier "This Is A Message" #f))
+    ;; Wait to get back confirmation that task was completed
+    (let ([response (sync/timeout 5.0 our-endpoint)])
+      (check-equal? response (list 'task-completed worker-identifier task-identifier)))
+    (worker-terminate worker))
+
+  ;; Worker Task Cancellation - Immediate
+  (let*-values ([(worker-identifier) "Test Worker"]
+                [(task-identifier) "Example Task"]
+                [(our-endpoint their-endpoint) (place-channel)]
+                [(worker) (make-worker worker-identifier their-endpoint)])
+    ;; Enqueue task
+    (worker-enqueue-task
+     worker
+     (example-task-handle task-identifier "Looping!" #t))
+    (check-false (sync/timeout 2.0 (worker-terminated-evt worker)))
+    (worker-terminate worker #:immediately #t #:synchronous #f)
+    (let ([response (sync/timeout 0.5 our-endpoint)])
+      (check-equal? response (list 'task-completed worker-identifier task-identifier)))
+    (check-equal? (sync/timeout 0.5 (worker-terminated-evt worker)) worker)))

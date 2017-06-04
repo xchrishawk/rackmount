@@ -47,12 +47,6 @@
   ;; Converts this task handle to a corresponding task object.
   [gen:task-handle->gen:task (-> task-handle? task?)]
 
-  ;; Serializes this task handle to a place message.
-  [gen:task-handle->place-message (-> task-handle? (listof place-message-allowed?))]
-
-  ;; Deserializes a place message to a task handle.
-  [place-message->gen:task-handle (-> (listof place-message-allowed?) task-handle?)]
-
   ;; -- Task Interface --
 
   ;; Predicate returning #t if the argument is a task object.
@@ -69,7 +63,7 @@
   [gen:task-cancel (->* (task?) (#:synchronous boolean?) any)]
 
   ;; Returns an event which is ready for synchronization when the task's thread
-  ;; is no longer running.
+  ;; is no longer running. The synchronization result is the task object itself.
   [gen:task-completed-evt (-> task? evt?)]
 
   ;; -- Common --
@@ -88,32 +82,6 @@
   (gen:task-handle-initialize task-handle)
   (gen:task-handle-close task-handle)
   (gen:task-handle->gen:task task-handle))
-
-(define (gen:task-handle->place-message task-handle)
-  (let*-values ([(name
-                  init-field-cnt
-                  auto-field-cnt
-                  accessor-proc
-                  mutator-proc
-                  immutable-k-list
-                  super-type
-                  skipped?)
-                 (let-values ([(info skipped?) (struct-info task-handle)])
-                   (if info
-                       (struct-type-info info)
-                       (error "Type cannot be serialized!")))])
-    (cons name
-          (build-list
-           (+ init-field-cnt auto-field-cnt)
-           (λ (index)
-             (let ([value (accessor-proc task-handle index)])
-               (if (place-message-allowed? value)
-                   value
-                   (error "Type contains non-serializable value!"))))))))
-
-(define (place-message->gen:task-handle place-message)
-  (let ([struct-constructor (eval (first place-message))])
-    (apply struct-constructor (rest place-message))))
 
 ;; -- Public Procedures (Task Interface) --
 
