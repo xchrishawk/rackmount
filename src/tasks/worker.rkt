@@ -38,7 +38,8 @@
   ;; Terminates a worker. If synchronous is #t, this method will block until
   ;; (worker-terminated-evt) is ready for synchronization.
   [worker-terminate (->i ([worker worker?])
-                         (#:synchronous [synchronous boolean?])
+                         (#:immediately [immediately boolean?]
+                          #:synchronous [synchronous boolean?])
                          [result void?])]
 
   ;; Returns an event which is ready for synchronization when a message can be
@@ -170,15 +171,16 @@
                ;; We're not already terminating - go ahead and start the task
                (begin
                  (worker-log-trace
-                  "Received task (~A), starting..."
-                  (gen:task-handle-identifier task-handle))
+                  "Received task (~A), starting it now. ~A tasks currently active on this worker."
+                  (gen:task-handle-identifier task-handle)
+                  (add1 (set-count tasks)))
                  (let ([task (gen:task-handle->gen:task task-handle)])
                    (gen:task-start task)
                    (loop (set-add tasks task) terminating)))
                ;; We are terminating - reject the task
                (begin
                  (worker-log-trace
-                  "Received task (~A), but worker is terminating. Rejecting..."
+                  "Received task (~A), but worker is terminating, so rejecting it."
                   (gen:task-handle-identifier task-handle))
                  (notify-task-completed (gen:task-handle-identifier task-handle))
                  (loop tasks terminating))))]
@@ -194,8 +196,9 @@
       (apply choice-evt (set-map tasks gen:task-completed-evt))
       (λ (task)
         (worker-log-trace
-         "Task (~A) completed, notifying manager..."
-         (gen:task-identifier task))
+         "Task (~A) completed, notifying manager. ~A tasks currently active on this worker."
+         (gen:task-identifier task)
+         (sub1 (set-count tasks)))
         ;; Notify manager that task is completed
         (notify-task-completed (gen:task-identifier task))
         ;; Loop only as long as either we're not terminating or there are tasks left
