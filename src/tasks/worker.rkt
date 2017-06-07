@@ -24,7 +24,7 @@
   ;; Creates a new worker.
   ;; - identifier: the identifier of the worker.
   ;; - output-channel: a channel to use to send messages to the manager.
-  [make-worker (-> worker-identifier? worker?)]
+  [rename make-worker worker (-> worker-identifier? worker?)]
 
   ;; Predicate returning #t if the argument is a worker object.
   [worker? (-> any/c boolean?)]
@@ -33,7 +33,7 @@
   [worker-identifier (-> worker? worker-identifier?)]
 
   ;; Enqueues a task with the worker.
-  [worker-enqueue-task (-> worker? gen:task-handle? void?)]
+  [worker-enqueue (-> worker? gen:task-handle? void?)]
 
   ;; Terminates a worker. If synchronous is #t, this method will block until
   ;; (worker-terminated-evt) is ready for synchronization.
@@ -100,7 +100,7 @@
     ;; Return struct
     (worker identifier pl our-pch-to-manager our-pch-from-manager)))
 
-(define (worker-enqueue-task worker task-handle)
+(define (worker-enqueue worker task-handle)
   (place-channel-put
    (worker-pch-from-manager worker)
    (list 'enqueue-task (gen:task-handle->place-message task-handle))))
@@ -156,6 +156,7 @@
         ;; Received command (terminate)
         [(list 'terminate (? boolean? immediately))
          ;; If we're terminating immediately, cancel all tasks
+         (worker-log-trace "Received terminate command (immediately = ~A)" immediately)
          (when immediately
            (for ([task (in-set tasks)])
              (gen:task-cancel task #:synchronous #f)))
@@ -167,21 +168,34 @@
          (let ([task-handle (place-message->gen:task-handle task-pm)])
            (if (not terminating)
                ;; We're not already terminating - go ahead and start the task
-               (let ([task (gen:task-handle->gen:task task-handle)])
-                 (gen:task-start task)
-                 (loop (set-add tasks task) terminating))
+               (begin
+                 (worker-log-trace
+                  "Received task (~A), starting..."
+                  (gen:task-handle-identifier task-handle))
+                 (let ([task (gen:task-handle->gen:task task-handle)])
+                   (gen:task-start task)
+                   (loop (set-add tasks task) terminating)))
                ;; We are terminating - reject the task
                (begin
+                 (worker-log-trace
+                  "Received task (~A), but worker is terminating. Rejecting..."
+                  (gen:task-handle-identifier task-handle))
                  (notify-task-completed (gen:task-handle-identifier task-handle))
                  (loop tasks terminating))))]
         ;; Unrecognized message - log and continue looping
         [unrecognized-message
+         (worker-log-error
+          "Unrecognized place message (~A). Ignoring..."
+          unrecognized-message)
          (loop tasks terminating)]))
 
      ;; Completed task?
      (handle-evt
       (apply choice-evt (set-map tasks gen:task-completed-evt))
       (λ (task)
+        (worker-log-trace
+         "Task (~A) completed, notifying manager..."
+         (gen:task-identifier task))
         ;; Notify manager that task is completed
         (notify-task-completed (gen:task-identifier task))
         ;; Loop only as long as either we're not terminating or there are tasks left
@@ -233,7 +247,7 @@
     ;; Worker Task Management
     (let ([worker (make-worker worker-id)])
       ;; Enqueue a task with the worker
-      (worker-enqueue-task worker (example-task-handle task-id 3.0))
+      (worker-enqueue worker (example-task-handle task-id 3.0))
       ;; Verify we don't get completion back before the task has completed
       (check-task-not-completed worker 2.5)
       ;; Verify we *do* get completion back after the task has completed
@@ -243,7 +257,7 @@
     ;; Worker Task Cancellation - Immediate
     (let ([worker (make-worker worker-id)])
       ;; Enqueue task with indefinite duration
-      (worker-enqueue-task worker (example-task-handle task-id #f))
+      (worker-enqueue worker (example-task-handle task-id #f))
       ;; Verify worker continues to run
       (check-worker-alive worker 2.0)
       ;; Terminate the worker immediately
@@ -256,7 +270,7 @@
     ;; Worker Task Cancellation - Not Immediate
     (let ([worker (make-worker worker-id)])
       ;; Enqueue task with 3 second duration
-      (worker-enqueue-task worker (example-task-handle task-id 3.0))
+      (worker-enqueue worker (example-task-handle task-id 3.0))
       ;; Terminate worker with immediate set to #f
       (worker-terminate worker #:immediately #f #:synchronous #f)
       ;; Verify worker continues to run in the meantime
@@ -269,11 +283,11 @@
     ;; Worker Task Rejection
     (let ([worker (make-worker worker-id)])
       ;; Enqueue task with 3 second duration
-      (worker-enqueue-task worker (example-task-handle "Accepted Task" 3.0))
+      (worker-enqueue worker (example-task-handle "Accepted Task" 3.0))
       ;; Terminate worker with immediate set to #f
       (worker-terminate worker #:immediately #f #:synchronous #f)
       ;; Enqueue new task which should be rejected
-      (worker-enqueue-task worker (example-task-handle "Rejected Task" #f))
+      (worker-enqueue worker (example-task-handle "Rejected Task" #f))
       ;; Verify that we immediately get back a completion for the rejected task
       (check-task-completed worker "Rejected Task" 0.5)
       ;; Verify that we get back a completion for the accepted task once it dies naturally
