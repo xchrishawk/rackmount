@@ -11,8 +11,10 @@
 
 ;; -- Requires --
 
+(require racket/generator)
 (require "../main/arguments.rkt")
 (require "../main/listener.rkt")
+(require "../tasks/client-task.rkt")
 (require "../tasks/manager.rkt")
 (require "../util/conversion.rkt")
 (require "../util/logging.rkt")
@@ -24,6 +26,11 @@
 
   ;; Main entry point for the application.
   [main (-> (listof string?) any)]))
+
+;; -- Objects --
+
+(define client-identifier-generator
+  (sequence->generator (in-naturals)))
 
 ;; -- Public Procedures --
 
@@ -69,9 +76,15 @@
 
 ;; Creates a client task handle and queues it with the manager.
 (define (handle-client-connected manager input-port output-port working-dir)
-  (main-log-info "Client connected!")
-  (close-input-port input-port)
-  (close-output-port output-port))
+  (let ([task-handle (client-task-handle
+                      (next-client-identifier)
+                      input-port
+                      output-port
+                      working-dir)])
+    (manager-enqueue manager task-handle)))
+
+(define (next-client-identifier)
+  (format "Client ~A" (client-identifier-generator)))
 
 ;; Local logging procedures
 (define-local-log main "Main")
