@@ -45,7 +45,9 @@
 ;; -- Public Procedures --
 
 (define (make-listener config)
-  (let ([thd (thread-start (listener-proc config))])
+  (let* ([startup-semaphore (make-semaphore)]
+         [thd (thread-start (listener-proc config startup-semaphore))])
+    (semaphore-wait startup-semaphore)
     (listener thd)))
 
 (define (listener-terminate listener #:synchronous [synchronous #t])
@@ -58,13 +60,15 @@
 ;; -- Private Procedures --
 
 ;; Main thread procedure for the listener.
-(define (listener-proc config)
+(define (listener-proc config startup-semaphore)
   (listener-log-trace "Thread running.")
   ;; Open listener
   (let ([listener (tcp-listen (listener-config-port-number config)
                               (listener-config-max-wait-count config)
                               (listener-config-reusable config)
                               (listener-config-interface config))])
+    ;; Notify caller that we're running
+    (semaphore-post startup-semaphore)
     ;; Log listener configuration
     (listener-log-debug (let ([text (open-output-string)])
                           (display "Listener active with configuration:" text)
@@ -103,3 +107,71 @@
 
 ;; Local logging function.
 (define-local-log listener "Listener")
+
+;; -- Tests --
+
+(module+ test
+
+  ;; -- Requires --
+
+  (require rackunit)
+
+  ;; -- Test Case --
+
+  (test-case "Lifecycle"
+
+    (parameterize ([minimum-log-event-level 'critical])
+
+      ;; Constants
+      (define port-number 44444)
+      (define client-connected-semaphore (make-semaphore))
+
+      ;; Server ports
+      (define server-input-port #f)
+      (define server-output-port #f)
+
+      ;; Helper function
+      (define (verify-cannot-connect)
+        (check-exn
+         exn:fail:network?
+         (thunk
+          (tcp-connect "localhost" port-number))))
+
+      ;; Verify we can't connect initially
+      (verify-cannot-connect)
+
+      ;; Create listener
+      (let* ([config (listener-config #f port-number 4 #t
+                                      (λ (input-port output-port)
+                                        (set! server-input-port input-port)
+                                        (set! server-output-port output-port)
+                                        (semaphore-post client-connected-semaphore)))]
+             [listener (make-listener config)])
+        ;; Connect
+        (let-values ([(client-input-port client-output-port)
+                      (tcp-connect "localhost" port-number)])
+          ;; Verify closure got called
+          (check-equal?
+           (sync/timeout 5.0 client-connected-semaphore)
+           client-connected-semaphore)
+          (check-true (input-port? server-input-port))
+          (check-true (output-port? server-output-port))
+          ;; Verify 2-way communication
+          (define (check-comm input-port output-port)
+            (let ([message "hello"])
+              (displayln message output-port)
+              (flush-output output-port)
+              (check-equal? (read-line input-port) message)))
+          (check-comm server-input-port client-output-port)
+          (check-comm client-input-port server-output-port)
+          ;; Disconnect
+          (close-input-port client-input-port)
+          (close-output-port client-output-port)
+          (close-input-port server-input-port)
+          (close-output-port server-output-port))
+
+        ;; Terminate the listener
+        (listener-terminate listener))
+
+      ;; Verify we can no longer connect
+      (verify-cannot-connect))))
