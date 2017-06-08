@@ -69,3 +69,81 @@
          minimum-log-event-level
          #:proc string->symbol
          #:guard log-event-level?])))
+
+;; -- Tests --
+
+(module+ test
+
+  ;; -- Requires --
+
+  (require rackunit)
+
+  ;; -- Test Cases --
+
+  (test-case "Worker Count"
+    (let ([args (parse-arguments '("-w" "." "-p" "8080"))])
+      (check-equal? (arguments-worker-count args) 1))
+    (let ([args (parse-arguments '("-w" "." "-p" "8080" "-j" "4"))])
+      (check-equal? (arguments-worker-count args) 4))
+    ;; Missing argument
+    (check-exn
+     exn:fail:user?
+     (thunk (parse-arguments '("-w" "." "-p" "8080" "-j")))))
+
+  (test-case "Working Directory"
+    (let ([args (parse-arguments '("-w" "." "-p" "8080"))])
+      (check-equal? (arguments-working-dir args) "."))
+    ;; Working directory not specified
+    (check-exn
+     exn:fail:user?
+     (thunk (parse-arguments '("-p" "8080"))))
+    ;; Working directory not a valid path string
+    (check-exn
+     exn:fail:user?
+     (thunk (parse-arguments '("-w" "???" "-p" "8080"))))
+    ;; Working directory does not exist
+    (check-exn
+     exn:fail:user?
+     (thunk (parse-arguments '("-w" "/doesnotexist" "-p" "8080"))))
+    ;; Missing argument
+    (check-exn
+     exn:fail:user?
+     (thunk (parse-arguments '("-p" "8080" "-w")))))
+
+  (test-case "Interface"
+    (let ([args (parse-arguments '("-w" "." "-p" "8080"))])
+      (check-equal? (arguments-interface args) #f))
+    (let ([args (parse-arguments '("-w" "." "-p" "8080" "-i" "interface"))])
+      (check-equal? (arguments-interface args) "interface"))
+    ;; Missing argument
+    (check-exn
+     exn:fail:user?
+     (thunk (parse-arguments '("-w" "." "-p" "8080" "-i")))))
+
+  (test-case "Port Number"
+    (let ([args (parse-arguments '("-w" "." "-p" "8080"))])
+      (check-equal? (arguments-port-number args) 8080))
+    ;; Not a valid port number
+    (check-exn
+     exn:fail:user?
+     (thunk (parse-arguments '("-w" "." "-p" "-1"))))
+    ;; Not an integer
+    (check-exn
+     exn:fail:user?
+     (thunk (parse-arguments '("-w" "." "-p" "8.080"))))
+    ;; Missing argument
+    (check-exn
+     exn:fail:user?
+     (thunk (parse-arguments '("-w" "." "-p")))))
+
+  (test-case "Log Level"
+    (let ([args (parse-arguments '("-w" "." "-p" "8080" "-l" "critical"))])
+      (check-equal? (arguments-minimum-log-event-level args) 'critical))
+    ;; Invalid log level
+    (check-exn
+     exn:fail:user?
+     (thunk (parse-arguments '("-w" "." "-p" "8080" "-l" "notalevel"))))
+    ;; Missing argument
+    (check-exn
+     exn:fail:user?
+     (thunk (parse-arguments '("-w" "." "-p" "8080" "-l"))))))
