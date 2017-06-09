@@ -12,6 +12,7 @@
 
 (require "../tasks/task.rkt")
 (require "../tasks/worker.rkt")
+(require "../util/exceptions.rkt")
 (require "../util/logging.rkt")
 (require "../util/misc.rkt")
 (require "../util/mlhash.rkt")
@@ -109,9 +110,7 @@
                (gen:task-handle-identifier task-handle)
                task-handle)))]
           ;; Unrecognized message
-          [unrecognized-message
-           (manager-log-error "Unrecognized thread message (~A). Ignoring..." unrecognized-message)
-           (loop worker-list tasks)]))
+          [bad-message (raise-bad-message-error bad-message)]))
        ;; Received place message
        (handle-evt
         (apply choice-evt (map worker-get-evt worker-list))
@@ -129,7 +128,9 @@
             (sub1 (mlhash-count tasks)))
            (let ([task-handle (mlhash-ref tasks worker-identifier task-identifier)])
              (gen:task-handle-close task-handle)
-             (loop worker-list (mlhash-remove tasks worker-identifier task-identifier)))]))
+             (loop worker-list (mlhash-remove tasks worker-identifier task-identifier)))]
+          ;; Unrecognized message
+          [bad-message (raise-bad-message-error bad-message)]))
        ;; Received place terminated event - remove it from the worker list, and
        ;; stop looping if all of the workers are dead.
        (handle-evt

@@ -12,6 +12,7 @@
 
 (require "../tasks/task.rkt")
 (require "../tasks/task-serialization.rkt")
+(require "../util/exceptions.rkt")
 (require "../util/logging.rkt")
 
 ;; -- Provides --
@@ -185,11 +186,7 @@
                  (notify-task-completed (gen:task-handle-identifier task-handle))
                  (loop tasks terminating))))]
         ;; Unrecognized message - log and continue looping
-        [unrecognized-message
-         (worker-log-error
-          "Unrecognized place message (~A). Ignoring..."
-          unrecognized-message)
-         (loop tasks terminating)]))
+        [bad-message (raise-bad-message-error bad-message)]))
 
      ;; Completed task?
      (handle-evt

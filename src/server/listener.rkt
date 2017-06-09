@@ -10,6 +10,7 @@
 
 ;; -- Requires --
 
+(require "../util/exceptions.rkt")
 (require "../util/logging.rkt")
 (require "../util/misc.rkt")
 
@@ -89,9 +90,7 @@
           ;; Terminate command - stop looping
           ['terminate (void)]
           ;; Unrecognized message?
-          [unrecognized-message
-           (listener-log-error "Unrecognized thread message (~A). Ignoring..." unrecognized-message)
-           (loop)]))
+          [bad-message (raise-bad-message-error bad-message)]))
        ;; New client connected
        (handle-evt
         listener
