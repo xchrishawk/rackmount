@@ -10,7 +10,7 @@
 ;; -- Requires --
 
 (require (for-syntax syntax/parse))
-(require (for-syntax "../util/syntax.rkt"))
+(require (for-syntax "../util/misc.rkt"))
 
 ;; -- Provides --
 

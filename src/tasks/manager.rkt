@@ -13,8 +13,8 @@
 (require "../tasks/task.rkt")
 (require "../tasks/worker.rkt")
 (require "../util/logging.rkt")
+(require "../util/misc.rkt")
 (require "../util/mlhash.rkt")
-(require "../util/thread-util.rkt")
 
 ;; -- Provides --
 

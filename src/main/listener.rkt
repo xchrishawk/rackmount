@@ -11,7 +11,7 @@
 ;; -- Requires --
 
 (require "../util/logging.rkt")
-(require "../util/thread-util.rkt")
+(require "../util/misc.rkt")
 
 ;; -- Provides --
 
