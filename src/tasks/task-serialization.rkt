@@ -10,8 +10,8 @@
 
 ;; -- Requires --
 
-(require "../tasks/client-task.rkt")
 (require "../tasks/example-task.rkt")
+(require "../tasks/session-task.rkt")
 (require "../tasks/task.rkt")
 
 ;; -- Provides --
@@ -29,8 +29,8 @@
 
 (define constructor-lookup
   (hash
-   'client-task-handle client-task-handle
-   'example-task-handle example-task-handle))
+   'example-task-handle example-task-handle
+   'session-task-handle session-task-handle))
 
 ;; -- Public Procedures --
 

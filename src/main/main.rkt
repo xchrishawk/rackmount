@@ -13,9 +13,9 @@
 
 (require racket/generator)
 (require "../main/arguments.rkt")
-(require "../main/listener.rkt")
-(require "../tasks/client-task.rkt")
+(require "../server/listener.rkt")
 (require "../tasks/manager.rkt")
+(require "../tasks/session-task.rkt")
 (require "../util/logging.rkt")
 (require "../util/misc.rkt")
 
@@ -29,7 +29,7 @@
 
 ;; -- Objects --
 
-(define client-identifier-generator
+(define session-identifier-generator
   (sequence->generator (in-naturals)))
 
 ;; -- Public Procedures --
@@ -76,15 +76,15 @@
 
 ;; Creates a client task handle and queues it with the manager.
 (define (handle-client-connected manager input-port output-port working-dir)
-  (let ([task-handle (client-task-handle
-                      (next-client-identifier)
+  (let ([task-handle (session-task-handle
+                      (next-session-identifier)
                       input-port
                       output-port
                       working-dir)])
     (manager-enqueue manager task-handle)))
 
-(define (next-client-identifier)
-  (format "Client ~A" (client-identifier-generator)))
+(define (next-session-identifier)
+  (format "Client ~A" (session-identifier-generator)))
 
 ;; Local logging procedures
 (define-local-log main "Main")
