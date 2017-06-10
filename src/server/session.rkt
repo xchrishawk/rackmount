@@ -66,7 +66,8 @@
                           deadline)]
              [final-ts (transaction-proc initial-ts)])
         ;; Keep looping if appropriate
-        (when (should-continue-session-with-transaction-result (transaction-state-result final-ts))
+        (when (should-continue-session-with-transaction-result
+               (transaction-state-result final-ts))
           (loop)))))
   (session-log-trace identifier "Session terminated."))
 
@@ -83,16 +84,12 @@
        (loop (transaction-handle-get-header ts))]
       ['get-body
        (loop (transaction-handle-get-body ts))]
-      ['log-request
-       (loop (transaction-handle-log-request ts))]
-      ['process-request
-       (loop (transaction-handle-process-request ts))]
+      ['valid-request
+       (loop (transaction-handle-valid-request ts))]
+      ['invalid-request
+       (loop (transaction-handle-invalid-request ts))]
       ['send-response
        (loop (transaction-handle-send-response ts))]
-      ['log-response
-       (loop (transaction-handle-log-response ts))]
-      ['bad-request
-       (loop (transaction-handle-bad-request ts))]
       ['client-disconnected
        (loop (transaction-handle-client-disconnected ts))]
       ['session-timed-out
@@ -109,13 +106,14 @@
   (wait-for-line
    ts
    (λ (line)
-     (let ([updated-request
-            (http-request-parse-request-line
-             (transaction-state-request ts)
-             line)])
-       (if updated-request
-           (update-state ts 'get-header [request updated-request])
-           (update-state ts 'bad-request))))))
+     (let-values ([(valid updated-request)
+                   (http-request-parse-request-line
+                    (transaction-state-request ts)
+                    line)])
+       (update-state
+        ts
+        (if valid 'get-header 'invalid-request)
+        [request updated-request])))))
 
 (define (transaction-handle-get-header ts)
   (wait-for-line
@@ -123,50 +121,29 @@
    (λ (line)
      (if (http-request-is-end-header-line? line)
          (update-state ts 'get-body)
-         (let ([updated-request
-                (http-request-parse-header-line
-                 (transaction-state-request ts)
-                 line)])
-           (if updated-request
-               (update-state ts 'get-header [request updated-request])
-               (update-state ts 'bad-request)))))))
+         (let-values ([(valid updated-request)
+                       (http-request-parse-header-line
+                        (transaction-state-request ts)
+                        line)])
+           (update-state
+            ts
+            (if valid 'get-header 'invalid-request)
+            [request updated-request]))))))
 
 (define (transaction-handle-get-body ts)
   ;; TODO
-  (update-state ts 'log-request))
+  (update-state ts 'valid-request))
 
-(define (transaction-handle-log-request ts)
-  (let ([message-string
-         (let ([message (open-output-string)]
-               [request (transaction-state-request ts)])
-           (define (add item value #:indent [indent 0])
-             (display (format "\n~A- ~A: ~A" (make-string indent #\space) item value) message))
-           (display "Received request with parameters as follows..." message)
-           (add "Method" (http-request-method request))
-           (add "URI" (http-request-uri request))
-           (add "HTTP Version"
-                (format
-                 "~A.~A"
-                 (http-request-major-version request)
-                 (http-request-minor-version request)))
-           (add "Headers" "")
-           (for ([(name value) (in-hash (http-request-headers request))])
-             (add name value #:indent 2))
-           (get-output-string message))])
-    (session-log-info (transaction-state-identifier ts) message-string))
-  (update-state ts 'process-request))
+(define (transaction-handle-valid-request ts)
+  (log-valid-request ts)
+  (update-state ts 'send-response [result 'success]))
 
-(define (transaction-handle-process-request ts)
-  (update-state ts 'send-response))
+(define (transaction-handle-invalid-request ts)
+  (log-invalid-request ts)
+  (update-state ts 'send-response [result 'invalid-request]))
 
 (define (transaction-handle-send-response ts)
-  (update-state ts 'log-response))
-
-(define (transaction-handle-log-response ts)
-  (update-state ts 'done [result 'success]))
-
-(define (transaction-handle-bad-request ts)
-  (update-state ts 'done [result 'bad-request]))
+  (update-state ts 'done))
 
 (define (transaction-handle-client-disconnected ts)
   (update-state ts 'done [result 'client-disconnected]))
@@ -186,6 +163,7 @@
 
 ;; -- Private Procedures (Utility) --
 
+;; Creates a new, default transaction-state struct.
 (define (make-transaction-state identifier
                                 input-port
                                 output-port
@@ -201,13 +179,47 @@
    (make-http-request)
    #f))
 
+;; Logs a valid request.
+(define (log-valid-request ts)
+  (let ([message (open-output-string)]
+        [request (transaction-state-request ts)])
+    (define (add item value #:indent [indent 0])
+      (display (format "\n~A- ~A: ~A" (make-string indent #\space) item value) message))
+    (display "Received valid request as follows..." message)
+    (add "Method" (http-request-method request))
+    (add "URI" (http-request-uri request))
+    (add "HTTP Version"
+         (format
+          "~A.~A"
+          (http-request-major-version request)
+          (http-request-minor-version request)))
+    (add "Headers" "")
+    (for ([(name value) (in-hash (http-request-headers request))])
+      (add name value #:indent 2))
+    (session-log-info
+     (transaction-state-identifier ts)
+     (get-output-string message))))
+
+;; Logs an invalid request.
+(define (log-invalid-request ts)
+  (let ([message (open-output-string)]
+        [request (transaction-state-request ts)])
+    (displayln "Received invalid request as follows..." message)
+    (display (http-request-raw request) message)
+    (session-log-info
+     (transaction-state-identifier ts)
+     (get-output-string message))))
+
+;; Returns #t if the session should continue with the specified result for the
+;; previous transaction.
 (define (should-continue-session-with-transaction-result result)
   (match result
     [(or 'success) #t]
     [else #f]))
 
-(define-local-log session "Session" #:require-identifier #t)
-
+;; Waits for a line from the client. If a line is received, calls process-line with
+;; the line as the argument, and returns the result. Otherwise, returns an updated
+;; transaction-state struct for the transaction disposition.
 (define (wait-for-line ts process-line)
   (sync
    ;; Received data from client
@@ -231,6 +243,9 @@
       ['terminate (update-state ts 'transaction-cancelled)]
       ;; Unknown event?
       [bad-message (raise-bad-message-error bad-message)]))))
+
+;; Local logging procedures.
+(define-local-log session "Session" #:require-identifier #t)
 
 ;; -- Macros --
 

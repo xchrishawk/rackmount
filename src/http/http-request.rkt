@@ -12,28 +12,38 @@
  (contract-out
 
   ;; Struct representing an HTTP request.
-  [struct http-request ([method (or/c string? false?)]
+  [struct http-request ([raw string?]
+                        [method (or/c string? false?)]
                         [uri (or/c string? false?)]
                         [major-version (or/c exact-nonnegative-integer? false?)]
                         [minor-version (or/c exact-nonnegative-integer? false?)]
-                        [headers (or/c hash? false?)]
+                        [headers hash?]
                         [body (or/c bytes? false?)])]
 
   ;; Creates a new, empty HTTP request object.
   [make-http-request (-> http-request?)]
 
-  ;; Updates the specified HTTP request with the specified request line.
-  [http-request-parse-request-line (-> http-request? string? (or/c http-request? false?))]
+  ;; Updates the specified HTTP request with the specified request line. Returns
+  ;; a validity flag and the updated struct.
+  [http-request-parse-request-line
+   (-> http-request?
+       string?
+       (values boolean? http-request?))]
 
-  ;; Updates the specified HTTP request with the specified header line.
-  [http-request-parse-header-line (-> http-request? string? (or/c http-request? false?))]
+  ;; Updates the specified HTTP request with the specified header line. Returns
+  ;; a validity flag and the updated struct.
+  [http-request-parse-header-line
+   (-> http-request?
+       string?
+       (values boolean? http-request?))]
 
   ;; Returns #t if the specified line indicates that there are no more headers.
   [http-request-is-end-header-line? (-> string? boolean?)]))
 
 ;; -- Structs --
 
-(struct http-request (method
+(struct http-request (raw
+                      method
                       uri
                       major-version
                       minor-version
@@ -44,41 +54,66 @@
 ;; -- Public Procedures --
 
 (define (make-http-request)
-  (http-request #f #f #f #f #f #f))
+  (http-request (string)
+                #f
+                #f
+                #f
+                #f
+                (hash)
+                #f))
 
 (define (http-request-parse-request-line request line)
   (let* ([line-port (open-input-string line)]
+         [raw (update-raw request line)]
          [method (read-from line-port token)]
          [uri (read-from line-port uri)]
          [version (read-from line-port http-version #:proc string->number)]
          [major-version (if version (first version) #f)]
          [minor-version (if version (second version) #f)])
     (if (and method uri major-version minor-version)
-        (struct-copy
-         http-request
-         request
-         [method method]
-         [uri uri]
-         [major-version major-version]
-         [minor-version minor-version])
-        #f)))
+        (values #t (struct-copy
+                    http-request
+                    request
+                    [raw raw]
+                    [method method]
+                    [uri uri]
+                    [major-version major-version]
+                    [minor-version minor-version]))
+        (values #f (struct-copy
+                    http-request
+                    request
+                    [raw raw])))))
 
 (define (http-request-parse-header-line request line)
-  (let* ([original-headers
-          (let ([headers (http-request-headers request)])
-            (if (hash? headers) headers (hash)))]
-         [line-port (open-input-string line)]
-         [name (read-from line-port token)]
-         [value (read-from line-port header-value)])
-    (if (and name value)
-        (struct-copy
-         http-request
-         request
-         [headers (hash-set original-headers name value)])
-        #f)))
+  (let* ([line-port (open-input-string line)]
+         [raw (update-raw request line)]
+         [header-name (read-from line-port token)]
+         [header-value (read-from line-port header-value)])
+    (if (and header-name header-value)
+        (values #t (struct-copy
+                    http-request
+                    request
+                    [raw raw]
+                    [headers (hash-set
+                              (http-request-headers request)
+                              header-name
+                              header-value)]))
+        (values #f (struct-copy
+                    http-request
+                    request
+                    [raw raw])))))
 
 (define (http-request-is-end-header-line? line)
   (zero? (string-length line)))
+
+;; -- Private Utility (Misc) --
+
+;; Appends a line to the raw string for the specified request.
+(define (update-raw request line)
+  (let ([original-raw (http-request-raw request)])
+    (if (zero? (string-length original-raw))
+        line
+        (string-append original-raw "\n" line))))
 
 ;; -- Private Utility (Read Primitives) --
 
