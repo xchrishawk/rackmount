@@ -72,15 +72,17 @@
       manager
       input-port
       output-port
-      (arguments-working-dir args)))))
+      (arguments-working-dir args)
+      (seconds->milliseconds (arguments-session-timeout args))))))
 
 ;; Creates a client task handle and queues it with the manager.
-(define (handle-client-connected manager input-port output-port working-dir)
+(define (handle-client-connected manager input-port output-port working-dir timeout)
   (let ([task-handle (session-task-handle
                       (next-session-identifier)
                       input-port
                       output-port
-                      working-dir)])
+                      working-dir
+                      timeout)])
     (manager-enqueue manager task-handle)))
 
 (define (next-session-identifier)

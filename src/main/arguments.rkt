@@ -9,6 +9,7 @@
 
 ;; -- Requires --
 
+(require "../server/session.rkt")
 (require "../util/arguments-parser.rkt")
 (require "../util/logging.rkt")
 
@@ -22,6 +23,7 @@
                      [working-dir path-string?]
                      [interface (or/c string? false?)]
                      [port-number port-number?]
+                     [session-timeout session-timeout?]
                      [minimum-log-event-level log-event-level?])]
 
   ;; Parses and validates arguments from the specified list of strings. Raises a
@@ -35,6 +37,7 @@
                    working-dir
                    interface
                    port-number
+                   session-timeout
                    minimum-log-event-level)
   #:transparent)
 
@@ -47,6 +50,7 @@
               #f	; working-dir: user must specify
               #f	; interface: default = #f (any)
               #f	; port-number: user must specify
+              #f	; session-timeout: default = #f (none)
               'trace)	; log-level: default = trace
    ([var ("-j" "--worker-count")
          worker-count
@@ -65,6 +69,10 @@
          #:proc string->number
          #:guard port-number?
          #:mandatory]
+    [var ("-z" "--session-timeout")
+         session-timeout
+         #:proc string->number
+         #:guard (and/c real? positive?)]
     [var ("-l" "--log-level")
          minimum-log-event-level
          #:proc string->symbol
@@ -135,6 +143,24 @@
     (check-exn
      exn:fail:user?
      (thunk (parse-arguments '("-w" "." "-p")))))
+
+  (test-case "Session Timeout"
+    (let ([args (parse-arguments '("-w" "." "-p" "8080"))])
+      (check-equal? (arguments-session-timeout args) #f))
+    (let ([args (parse-arguments '("-w" "." "-p" "8080" "-z" "9.5"))])
+      (check-equal? (arguments-session-timeout args) 9.5))
+    ;; Invalid value
+    (check-exn
+     exn:fail:user?
+     (thunk (parse-arguments '("-w" "." "-p" "8080" "-z" "x14.x"))))
+    ;; Negative timeout
+    (check-exn
+     exn:fail:user?
+     (thunk (parse-arguments '("-w" "." "-p" "8080" "-z" "-15"))))
+    ;; Missing argument
+    (check-exn
+     exn:fail:user?
+     (thunk (parse-arguments '("-w" "." "-p" "8080" "-z")))))
 
   (test-case "Log Level"
     (let ([args (parse-arguments '("-w" "." "-p" "8080" "-l" "critical"))])

@@ -21,8 +21,16 @@
 (provide
  (contract-out
 
+  ;; Predicate returning #t if the argument is a valid session timeout.
+  [session-timeout? (-> any/c boolean?)]
+
   ;; Main client handler procedure.
-  [session-proc (-> gen:task-identifier? input-port? output-port? path-string? void?)]))
+  [session-proc (-> gen:task-identifier?
+                    input-port?
+                    output-port?
+                    path-string?
+                    session-timeout?
+                    void?)]))
 
 ;; -- Structs --
 
@@ -37,18 +45,24 @@
 
 ;; -- Public Procedures --
 
-(define (session-proc identifier input-port output-port working-dir)
+(define session-timeout?
+  (or/c false? (and/c real? positive?)))
+
+(define (session-proc identifier input-port output-port working-dir timeout)
   (session-log-trace identifier "Session started.")
-  (let loop ()
-    (let* ([initial-ts (make-transaction-state
-                        identifier
-                        input-port
-                        output-port
-                        working-dir
-                        (+ (current-inexact-milliseconds) 15000.0))] ; todo
-           [final-ts (transaction-proc initial-ts)])
-      (when #f ; todo
-        (loop))))
+  (let ([deadline (+ (current-inexact-milliseconds) timeout)])
+    (let loop ()
+      ;; Run the state machine and get the final result
+      (let* ([initial-ts (make-transaction-state
+                          identifier
+                          input-port
+                          output-port
+                          working-dir
+                          deadline)]
+             [final-ts (transaction-proc initial-ts)])
+        ;; Keep looping if appropriate
+        (when (should-continue-session-with-transaction-result (transaction-state-result final-ts))
+          (loop)))))
   (session-log-trace identifier "Session terminated."))
 
 ;; -- Private Procedures (Transaction State Machine) --
@@ -74,8 +88,8 @@
        (loop (transaction-handle-log-response ts))]
       ['client-disconnected
        (loop (transaction-handle-client-disconnected ts))]
-      ['transaction-timed-out
-       (loop (transaction-handle-transaction-timed-out ts))]
+      ['session-timed-out
+       (loop (transaction-handle-session-timed-out ts))]
       ['transaction-cancelled
        (loop (transaction-handle-transaction-cancelled ts))]
       ['done
@@ -120,8 +134,8 @@
 (define (transaction-handle-client-disconnected ts)
   (update-state ts 'done [result 'client-disconnected]))
 
-(define (transaction-handle-transaction-timed-out ts)
-  (update-state ts 'done [result 'transaction-timed-out]))
+(define (transaction-handle-session-timed-out ts)
+  (update-state ts 'done [result 'session-timed-out]))
 
 (define (transaction-handle-transaction-cancelled ts)
   (update-state ts 'done [result 'transaction-cancelled]))
@@ -149,6 +163,11 @@
    #f
    #f))
 
+(define (should-continue-session-with-transaction-result result)
+  (match result
+    [(or 'success) #t]
+    [else #f]))
+
 (define-local-log session "Session" #:require-identifier #t)
 
 (define (wait-for-line ts process-line)
@@ -161,10 +180,10 @@
       [(? string? line) (process-line line)]
       ;; Client disconnected
       [eof (update-state ts 'client-disconnected)]))
-   ;; Transaction timed out
+   ;; Session timed out
    (handle-evt
     (alarm-evt (transaction-state-deadline ts))
-    (thunk* (update-state ts 'transaction-timed-out)))
+    (thunk* (update-state ts 'session-timed-out)))
    ;; Received thread event
    (handle-evt
     (wrap-evt (thread-receive-evt) (thunk* (thread-receive)))

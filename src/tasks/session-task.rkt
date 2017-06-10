@@ -24,14 +24,16 @@
   [struct session-task-handle ([identifier gen:task-identifier?]
                                [input-port input-port?]
                                [output-port output-port?]
-                               [working-dir path-string?])]))
+                               [working-dir path-string?]
+                               [timeout session-timeout?])]))
 
 ;; -- Types --
 
 (struct session-task-handle (identifier
                              input-port
                              output-port
-                             working-dir)
+                             working-dir
+                             timeout)
   #:transparent
   #:methods gen:task-handle
   [(define (gen:task-handle-identifier task-handle)
@@ -53,12 +55,14 @@
      (session-task (session-task-handle-identifier task-handle)
                    (session-task-handle-input-port task-handle)
                    (session-task-handle-output-port task-handle)
-                   (session-task-handle-working-dir task-handle)))])
+                   (session-task-handle-working-dir task-handle)
+                   (session-task-handle-timeout task-handle)))])
 
 (struct session-task (identifier
                       input-port
                       output-port
                       working-dir
+                      timeout
                       [thread #:auto #:mutable])
   #:auto-value #f
   #:methods gen:task
@@ -71,7 +75,8 @@
                   (session-task-identifier task)
                   (session-task-input-port task)
                   (session-task-output-port task)
-                  (session-task-working-dir task)))])
+                  (session-task-working-dir task)
+                  (session-task-timeout task)))])
        (set-session-task-thread! task thd)))
 
    (define (gen:task-cancel task #:synchronous [synchronous #t])
