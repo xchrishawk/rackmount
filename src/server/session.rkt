@@ -14,6 +14,7 @@
 (require (for-syntax syntax/parse))
 (require "../http/http-request.rkt")
 (require "../http/http-response.rkt")
+(require "../http/http-response-lib.rkt")
 (require "../tasks/task.rkt")
 (require "../util/exceptions.rkt")
 (require "../util/logging.rkt")
@@ -138,25 +139,27 @@
 
 (define (transaction-handle-valid-request ts)
   (log-valid-request ts)
-  (update-state ts 'send-response [result 'success]))
+  (update-state
+   ts
+   'send-response
+   [response (http-response-ok
+              #:entity #"hi there"
+              #:extra-headers (hash "Content-Length" "8"))]
+   [result 'success]))
 
 (define (transaction-handle-invalid-request ts)
   (log-invalid-request ts)
   (update-state
    ts
    'send-response
-   [response (http-response 400
-                            (http-response-standard-reason 400)
-                            1
-                            1
-                            (hash)
-                            #f)]
+   [response (http-response-bad-request)]
    [result 'invalid-request]))
 
 (define (transaction-handle-send-response ts)
   (let ([response-bytes (http-response->bytes (transaction-state-response ts))])
     (write-bytes response-bytes (transaction-state-output-port ts))
     (flush-output (transaction-state-output-port ts)))
+  (log-response ts)
   (update-state ts 'done))
 
 (define (transaction-handle-client-disconnected ts)
@@ -208,7 +211,7 @@
           "~A.~A"
           (http-request-major-version request)
           (http-request-minor-version request)))
-    (add "Headers" "")
+    (add "Headers" (string-empty))
     (for ([(name value) (in-hash (http-request-headers request))])
       (add name value #:indent 2))
     (session-log-info
@@ -221,6 +224,27 @@
         [request (transaction-state-request ts)])
     (displayln "Received invalid request as follows..." message)
     (display (http-request-raw request) message)
+    (session-log-info
+     (transaction-state-identifier ts)
+     (get-output-string message))))
+
+;; Logs a sent response.
+(define (log-response ts)
+  (let ([message (open-output-string)]
+        [response (transaction-state-response ts)])
+    (define (add item value #:indent [indent 0])
+      (display (format "\n~A- ~A: ~A" (make-string indent #\space) item value) message))
+    (display "Sent response as follows..." message)
+    (add "Status Code" (http-response-status-code response))
+    (add "Reason" (http-response-reason response))
+    (add "HTTP Version"
+         (format
+          "~A.~A"
+          (http-response-major-version response)
+          (http-response-minor-version response)))
+    (add "Headers" (string-empty))
+    (for ([(name value) (in-hash (http-response-headers response))])
+      (add name value #:indent 2))
     (session-log-info
      (transaction-state-identifier ts)
      (get-output-string message))))
