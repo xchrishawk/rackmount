@@ -142,9 +142,7 @@
   (update-state
    ts
    'send-response
-   [response (http-response-ok
-              #:entity #"hi there"
-              #:extra-headers (hash "Content-Length" "8"))]
+   [response (http-response-ok #:entity #"hi there")]
    [result 'success]))
 
 (define (transaction-handle-invalid-request ts)

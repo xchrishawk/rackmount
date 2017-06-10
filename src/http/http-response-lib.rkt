@@ -20,7 +20,7 @@
 ;; Contract for HTTP response-generating procedures.
 (define response-contract
   (->* ()
-       (#:extra-headers (maybe/c (hash/c string? string?))
+       (#:extra-headers (maybe/c (hash/c string? any/c))
         #:entity (maybe/c bytes?)
         #:http-major-version exact-nonnegative-integer?
         #:http-minor-version exact-nonnegative-integer?)
@@ -62,7 +62,7 @@
      http-major-version
      http-minor-version
      ;; Headers
-     (let ([default-headers (default-headers)])
+     (let ([default-headers (default-headers entity)])
        (if extra-headers
            (hash-union default-headers extra-headers)
            default-headers))
@@ -70,10 +70,16 @@
      entity)))
 
 ;; Generates the default headers which should be included with every response.
-(define (default-headers)
-  (hash
-   ;; Server header (RFC 2616 section 14.38)
-   "Server" (server-name)))
+(define (default-headers entity)
+  (let ([result (hash)])
+    (define (set header-name header-value)
+      (set! result (hash-set result header-name header-value)))
+    ;; Server header (RFC 2616 section 14.38)
+    (set "Server" (server-name))
+    ;; Content-Length header (RFC 2616 section 14.13)
+    (when entity
+      (set "Content-Length" (bytes-length entity)))
+    result))
 
 ;; -- Response Library --
 

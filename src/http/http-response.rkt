@@ -21,7 +21,7 @@
                          [reason string?]
                          [major-version exact-nonnegative-integer?]
                          [minor-version exact-nonnegative-integer?]
-                         [headers (hash/c string? string?)]
+                         [headers (hash/c string? any/c)]
                          [entity (maybe/c bytes?)])]
 
   ;; Predicate returning #t if the argument is a valid HTTP response code.
