@@ -41,6 +41,7 @@
                            state
                            request
                            response
+                           exception
                            result)
   #:transparent)
 
@@ -48,27 +49,38 @@
 
 (define (session-proc identifier input-port output-port)
   (session-log-info identifier "Session started.")
-  (let ([deadline
-         (ifmap ([timeout (config-session-timeout)])
-           (+ (current-inexact-milliseconds) timeout))])
-    (let loop ()
-      ;; Run the state machine and get the final result
-      (let* ([initial-ts (make-transaction-state
-                          identifier
-                          input-port
-                          output-port
-                          deadline)]
-             [final-ts (transaction-proc initial-ts)])
-        ;; Keep looping if appropriate
-        (when (should-continue-session-with-transaction-result
-               (transaction-state-result final-ts))
-          (loop)))))
+  (with-handlers (;; This is a last-ditch effort to recover gracefully and close
+                  ;; the connection. This should only be hit if the initial error
+                  ;; handler in transaction-proc *also* errors out. The client will
+                  ;; not receive a 500 response, but the connection *should* be
+                  ;; terminated cleanly. Hopefully.
+                  [exn:fail?
+                   (λ (ex)
+                     (session-log-critical
+                      identifier
+                      "Secondary internal error occurred:\n\n~A\n\nUnable to continue session."
+                      ex))])
+    (let ([deadline (ifmap ([timeout (config-session-timeout)])
+                      (+ (current-inexact-milliseconds) timeout))])
+      (let loop ()
+        ;; Run the state machine and get the final result
+        (let* ([initial-ts (make-transaction-state
+                            identifier
+                            input-port
+                            output-port
+                            deadline)]
+               [final-ts (transaction-proc initial-ts)])
+          ;; Keep looping if appropriate
+          (when (should-continue-session-with-transaction-result
+                 (transaction-state-result final-ts))
+            (loop))))))
   (session-log-info identifier "Session terminated."))
 
 ;; -- Private Procedures (Transaction State Machine) --
 
 (define (transaction-proc ts)
-  (let loop ([ts (update-state ts 'start)])
+  ;; Main state machine procedure.
+  (define (loop ts)
     (match (transaction-state-state ts)
       ['start
        (loop (transaction-handle-start ts))]
@@ -82,6 +94,8 @@
        (loop (transaction-handle-valid-request ts))]
       ['invalid-request
        (loop (transaction-handle-invalid-request ts))]
+      ['internal-error
+       (loop (transaction-handle-internal-error ts))]
       ['send-response
        (loop (transaction-handle-send-response ts))]
       ['client-disconnected
@@ -91,7 +105,14 @@
       ['transaction-cancelled
        (loop (transaction-handle-transaction-cancelled ts))]
       ['done
-       (transaction-handle-done ts)])))
+       (transaction-handle-done ts)]))
+  (with-handlers (;; Error occurred - jump to internal error state.
+                  ;; If a further error occurs, we will fall out of this method.
+                  [exn:fail?
+                   (λ (ex)
+                     (loop (update-state ts 'internal-error [exception ex])))])
+    ;; Run the main loop
+    (loop (update-state ts 'start))))
 
 (define (transaction-handle-start ts)
   (update-state ts 'get-request-line))
@@ -144,6 +165,17 @@
    [response (http-response-bad-request)]
    [result 'invalid-request]))
 
+(define (transaction-handle-internal-error ts)
+  (session-log-error
+   (transaction-state-identifier ts)
+   "Internal error occurred:\n\n~A\n\nSending internal server error message."
+   (transaction-state-exception ts))
+  (update-state
+   ts
+   'send-response
+   [response (http-response-internal-server-error)]
+   [result 'internal-error]))
+
 (define (transaction-handle-send-response ts)
   (let ([response-bytes (http-response->bytes (transaction-state-response ts))])
     (write-bytes response-bytes (transaction-state-output-port ts))
@@ -181,6 +213,7 @@
    deadline
    #f
    (make-http-request)
+   #f
    #f
    #f))
 
