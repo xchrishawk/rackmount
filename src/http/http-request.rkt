@@ -6,19 +6,25 @@
 
 #lang racket
 
+;; -- Requires --
+
+(require "../util/misc.rkt")
+
 ;; -- Provides --
 
 (provide
  (contract-out
 
   ;; Struct representing an HTTP request.
+  ;; - note: Fields are optional because this struct is generated iteratively as
+  ;;   we receive lines from the client.
   [struct http-request ([raw string?]
-                        [method (or/c string? false?)]
-                        [uri (or/c string? false?)]
-                        [major-version (or/c exact-nonnegative-integer? false?)]
-                        [minor-version (or/c exact-nonnegative-integer? false?)]
+                        [method (maybe/c string?)]
+                        [uri (maybe/c string?)]
+                        [major-version (maybe/c exact-nonnegative-integer?)]
+                        [minor-version (maybe/c exact-nonnegative-integer?)]
                         [headers hash?]
-                        [body (or/c bytes? false?)])]
+                        [body (maybe/c bytes?)])]
 
   ;; Creates a new, empty HTTP request object.
   [make-http-request (-> http-request?)]
@@ -104,14 +110,14 @@
                     [raw raw])))))
 
 (define (http-request-is-end-header-line? line)
-  (zero? (string-length line)))
+  (string-empty? line))
 
 ;; -- Private Utility (Misc) --
 
 ;; Appends a line to the raw string for the specified request.
 (define (update-raw request line)
   (let ([original-raw (http-request-raw request)])
-    (if (zero? (string-length original-raw))
+    (if (string-empty? original-raw)
         line
         (string-append original-raw "\n" line))))
 
