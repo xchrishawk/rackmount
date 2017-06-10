@@ -34,7 +34,16 @@
   [seconds->milliseconds (-> real? real?)]
 
   ;; Converts milliseconds to seconds.
-  [milliseconds->seconds (-> real? real?)]))
+  [milliseconds->seconds (-> real? real?)]
+
+  ;; Equivalent to (or/c arg false?).
+  [maybe/c (-> contract? contract?)]
+
+  ;; Returns an empty string.
+  [string-empty (-> string?)]
+
+  ;; Predicate returning #t if the argument is an empty string.
+  [string-empty? (-> string? boolean?)]))
 
 ;; -- Public Macros
 
@@ -66,3 +75,12 @@
 
 (define (milliseconds->seconds milliseconds)
   (/ milliseconds 1000.0))
+
+(define (maybe/c ctc)
+  (or/c ctc false?))
+
+(define string-empty
+  (const ""))
+
+(define (string-empty? str)
+  (zero? (string-length str)))

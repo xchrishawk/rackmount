@@ -13,6 +13,7 @@
 
 (require (for-syntax syntax/parse))
 (require "../http/http-request.rkt")
+(require "../http/http-response.rkt")
 (require "../tasks/task.rkt")
 (require "../util/exceptions.rkt")
 (require "../util/logging.rkt")
@@ -43,6 +44,7 @@
                            deadline
                            state
                            request
+                           response
                            result)
   #:transparent)
 
@@ -140,9 +142,21 @@
 
 (define (transaction-handle-invalid-request ts)
   (log-invalid-request ts)
-  (update-state ts 'send-response [result 'invalid-request]))
+  (update-state
+   ts
+   'send-response
+   [response (http-response 400
+                            (http-response-standard-reason 400)
+                            1
+                            1
+                            (hash)
+                            #f)]
+   [result 'invalid-request]))
 
 (define (transaction-handle-send-response ts)
+  (let ([response-bytes (http-response->bytes (transaction-state-response ts))])
+    (write-bytes response-bytes (transaction-state-output-port ts))
+    (flush-output (transaction-state-output-port ts)))
   (update-state ts 'done))
 
 (define (transaction-handle-client-disconnected ts)
@@ -177,6 +191,7 @@
    deadline
    #f
    (make-http-request)
+   #f
    #f))
 
 ;; Logs a valid request.
