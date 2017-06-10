@@ -73,7 +73,8 @@
       input-port
       output-port
       (arguments-working-dir args)
-      (seconds->milliseconds (arguments-session-timeout args))))))
+      (ifmap ([timeout (arguments-session-timeout args)])
+        (seconds->milliseconds timeout))))))
 
 ;; Creates a client task handle and queues it with the manager.
 (define (handle-client-connected manager input-port output-port working-dir timeout)

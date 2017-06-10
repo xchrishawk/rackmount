@@ -12,9 +12,11 @@
 ;; -- Requires --
 
 (require (for-syntax syntax/parse))
+(require "../http/http-request.rkt")
 (require "../tasks/task.rkt")
 (require "../util/exceptions.rkt")
 (require "../util/logging.rkt")
+(require "../util/misc.rkt")
 
 ;; -- Provides --
 
@@ -40,6 +42,7 @@
                            working-dir
                            deadline
                            state
+                           request
                            result)
   #:transparent)
 
@@ -50,7 +53,9 @@
 
 (define (session-proc identifier input-port output-port working-dir timeout)
   (session-log-trace identifier "Session started.")
-  (let ([deadline (+ (current-inexact-milliseconds) timeout)])
+  (let ([deadline
+         (ifmap ([timeout timeout])
+           (+ (current-inexact-milliseconds) timeout))])
     (let loop ()
       ;; Run the state machine and get the final result
       (let* ([initial-ts (make-transaction-state
@@ -86,6 +91,8 @@
        (loop (transaction-handle-send-response ts))]
       ['log-response
        (loop (transaction-handle-log-response ts))]
+      ['bad-request
+       (loop (transaction-handle-bad-request ts))]
       ['client-disconnected
        (loop (transaction-handle-client-disconnected ts))]
       ['session-timed-out
@@ -102,24 +109,51 @@
   (wait-for-line
    ts
    (λ (line)
-     (displayln line)
-     (update-state ts 'get-header))))
+     (let ([updated-request
+            (http-request-parse-request-line
+             (transaction-state-request ts)
+             line)])
+       (if updated-request
+           (update-state ts 'get-header [request updated-request])
+           (update-state ts 'bad-request))))))
 
 (define (transaction-handle-get-header ts)
   (wait-for-line
    ts
    (λ (line)
-     (displayln line)
-     (update-state ts 'get-body))))
+     (if (http-request-is-end-header-line? line)
+         (update-state ts 'get-body)
+         (let ([updated-request
+                (http-request-parse-header-line
+                 (transaction-state-request ts)
+                 line)])
+           (if updated-request
+               (update-state ts 'get-header [request updated-request])
+               (update-state ts 'bad-request)))))))
 
 (define (transaction-handle-get-body ts)
-  (wait-for-line
-   ts
-   (λ (line)
-     (displayln line)
-     (update-state ts 'process-request))))
+  ;; TODO
+  (update-state ts 'log-request))
 
 (define (transaction-handle-log-request ts)
+  (let ([message-string
+         (let ([message (open-output-string)]
+               [request (transaction-state-request ts)])
+           (define (add item value #:indent [indent 0])
+             (display (format "\n~A- ~A: ~A" (make-string indent #\space) item value) message))
+           (display "Received request with parameters as follows..." message)
+           (add "Method" (http-request-method request))
+           (add "URI" (http-request-uri request))
+           (add "HTTP Version"
+                (format
+                 "~A.~A"
+                 (http-request-major-version request)
+                 (http-request-minor-version request)))
+           (add "Headers" "")
+           (for ([(name value) (in-hash (http-request-headers request))])
+             (add name value #:indent 2))
+           (get-output-string message))])
+    (session-log-info (transaction-state-identifier ts) message-string))
   (update-state ts 'process-request))
 
 (define (transaction-handle-process-request ts)
@@ -130,6 +164,9 @@
 
 (define (transaction-handle-log-response ts)
   (update-state ts 'done [result 'success]))
+
+(define (transaction-handle-bad-request ts)
+  (update-state ts 'done [result 'bad-request]))
 
 (define (transaction-handle-client-disconnected ts)
   (update-state ts 'done [result 'client-disconnected]))
@@ -161,6 +198,7 @@
    working-dir
    deadline
    #f
+   (make-http-request)
    #f))
 
 (define (should-continue-session-with-transaction-result result)
@@ -182,7 +220,8 @@
       [eof (update-state ts 'client-disconnected)]))
    ;; Session timed out
    (handle-evt
-    (alarm-evt (transaction-state-deadline ts))
+    (let ([deadline (transaction-state-deadline ts)])
+      (if deadline (alarm-evt deadline) never-evt))
     (thunk* (update-state ts 'session-timed-out)))
    ;; Received thread event
    (handle-evt

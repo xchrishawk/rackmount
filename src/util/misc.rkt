@@ -20,6 +20,9 @@
  ;; Starts a thread.
  thread-start
 
+ ;; Anaphoric if macro.
+ ifmap
+
  ;; -- Procedures --
 
  (contract-out
@@ -40,6 +43,18 @@
     [(_ body:expr ...+)
      (syntax
       (thread (thunk body ...)))]))
+
+(define-syntax (ifmap stx)
+  (define-syntax-class binding-pair
+    #:description "binding pair"
+    (pattern (name:id value:expr)))
+  (syntax-parse stx
+    [(_ (formals:binding-pair ...+) body ...+)
+     #`(let (formals ...)
+         (if (and formals.name ...)
+             (begin
+               body ...)
+             #f))]))
 
 ;; -- Public Procedures --
 
