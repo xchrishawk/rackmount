@@ -9,6 +9,7 @@
 
 ;; -- Requires --
 
+(require "../main/configuration.rkt")
 (require "../server/session.rkt")
 (require "../util/arguments-parser.rkt")
 (require "../util/logging.rkt")

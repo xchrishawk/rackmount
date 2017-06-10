@@ -75,7 +75,7 @@
     (define (set header-name header-value)
       (set! result (hash-set result header-name header-value)))
     ;; Server header (RFC 2616 section 14.38)
-    (set "Server" (server-name))
+    (set "Server" (config-server-name))
     ;; Content-Length header (RFC 2616 section 14.13)
     (when entity
       (set "Content-Length" (bytes-length entity)))

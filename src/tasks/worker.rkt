@@ -85,8 +85,10 @@
                [(pl) (place bootstrap-pch
                        ;; Set place configuration
                        (parameterize*
-                           ([minimum-log-event-level (place-channel-get bootstrap-pch)]
-                            [server-name (place-channel-get bootstrap-pch)]
+                           ([config-minimum-log-event-level (place-channel-get bootstrap-pch)]
+                            [config-server-name (place-channel-get bootstrap-pch)]
+                            [config-session-timeout (place-channel-get bootstrap-pch)]
+                            [config-working-dir (place-channel-get bootstrap-pch)]
                             [current-worker-pch-to-manager (place-channel-get bootstrap-pch)]
                             [current-worker-pch-from-manager (place-channel-get bootstrap-pch)]
                             [current-worker-identifier (place-channel-get bootstrap-pch)])
@@ -95,8 +97,10 @@
                          ;; Run the main worker procedure
                          (worker-main)))])
     ;; Configure the place
-    (place-channel-put pl (minimum-log-event-level))
-    (place-channel-put pl (server-name))
+    (place-channel-put pl (config-minimum-log-event-level))
+    (place-channel-put pl (config-server-name))
+    (place-channel-put pl (config-session-timeout))
+    (place-channel-put pl (config-working-dir))
     (place-channel-put pl their-pch-to-manager)
     (place-channel-put pl their-pch-from-manager)
     (place-channel-put pl identifier)
@@ -239,7 +243,7 @@
 
   ;; -- Test Cases --
 
-  (parameterize ([minimum-log-event-level 'critical])
+  (parameterize ([config-minimum-log-event-level 'critical])
 
     ;; Worker Lifecycle
     (let ([worker (make-worker worker-id)])

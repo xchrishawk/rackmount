@@ -120,7 +120,7 @@
 
   (test-case "Lifecycle"
 
-    (parameterize ([minimum-log-event-level 'critical])
+    (parameterize ([config-minimum-log-event-level 'critical])
 
       ;; Constants
       (define port-number 44444)

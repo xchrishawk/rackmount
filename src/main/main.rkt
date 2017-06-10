@@ -43,12 +43,19 @@
    (string-join args-list))
   (let* ([args (parse-arguments args-list)])
     (parameterize (;; Set minimum logging level
-                   [minimum-log-event-level
+                   [config-minimum-log-event-level
                     (arguments-minimum-log-event-level args)]
                    ;; Set reported server name
-                   [server-name
+                   [config-server-name
                     (let ([override-server-name (arguments-override-server-name args)])
-                      (or override-server-name (rackmount-version)))])
+                      (or override-server-name (rackmount-version)))]
+                   ;; Set session timeout
+                   [config-session-timeout
+                    (ifmap ([timeout (arguments-session-timeout args)])
+                      (seconds->milliseconds timeout))]
+                   ;; Set working directory
+                   [config-working-dir
+                    (arguments-working-dir args)])
       (let* (;; Start manager
              [manager-config (make-manager-config args)]
              [manager (manager manager-config)]
@@ -83,19 +90,14 @@
      (handle-client-connected
       manager
       input-port
-      output-port
-      (arguments-working-dir args)
-      (ifmap ([timeout (arguments-session-timeout args)])
-        (seconds->milliseconds timeout))))))
+      output-port))))
 
 ;; Creates a client task handle and queues it with the manager.
-(define (handle-client-connected manager input-port output-port working-dir timeout)
+(define (handle-client-connected manager input-port output-port)
   (let ([task-handle (session-task-handle
                       (next-session-identifier)
                       input-port
-                      output-port
-                      working-dir
-                      timeout)])
+                      output-port)])
     (manager-enqueue manager task-handle)))
 
 (define (next-session-identifier)

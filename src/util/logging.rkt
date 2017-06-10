@@ -81,7 +81,7 @@
 
 (define (log-event-level-enabled? log-event-level)
   (<= (log-event-level->integer log-event-level)
-      (log-event-level->integer (minimum-log-event-level))))
+      (log-event-level->integer (config-minimum-log-event-level))))
 
 ;; -- Private Procedures --
 

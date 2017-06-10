@@ -15,6 +15,7 @@
 (require "../http/http-request.rkt")
 (require "../http/http-response.rkt")
 (require "../http/http-response-lib.rkt")
+(require "../main/configuration.rkt")
 (require "../tasks/task.rkt")
 (require "../util/exceptions.rkt")
 (require "../util/logging.rkt")
@@ -25,15 +26,10 @@
 (provide
  (contract-out
 
-  ;; Predicate returning #t if the argument is a valid session timeout.
-  [session-timeout? (-> any/c boolean?)]
-
   ;; Main client handler procedure.
   [session-proc (-> gen:task-identifier?
                     input-port?
                     output-port?
-                    path-string?
-                    session-timeout?
                     void?)]))
 
 ;; -- Structs --
@@ -41,7 +37,6 @@
 (struct transaction-state (identifier
                            input-port
                            output-port
-                           working-dir
                            deadline
                            state
                            request
@@ -51,13 +46,10 @@
 
 ;; -- Public Procedures --
 
-(define session-timeout?
-  (or/c false? (and/c real? positive?)))
-
-(define (session-proc identifier input-port output-port working-dir timeout)
+(define (session-proc identifier input-port output-port)
   (session-log-info identifier "Session started.")
   (let ([deadline
-         (ifmap ([timeout timeout])
+         (ifmap ([timeout (config-session-timeout)])
            (+ (current-inexact-milliseconds) timeout))])
     (let loop ()
       ;; Run the state machine and get the final result
@@ -65,7 +57,6 @@
                           identifier
                           input-port
                           output-port
-                          working-dir
                           deadline)]
              [final-ts (transaction-proc initial-ts)])
         ;; Keep looping if appropriate
@@ -182,13 +173,11 @@
 (define (make-transaction-state identifier
                                 input-port
                                 output-port
-                                working-dir
                                 deadline)
   (transaction-state
    identifier
    input-port
    output-port
-   working-dir
    deadline
    #f
    (make-http-request)
