@@ -13,6 +13,7 @@
 
 (require (for-syntax syntax/parse))
 (require "../tasks/task.rkt")
+(require "../util/exceptions.rkt")
 (require "../util/logging.rkt")
 
 ;; -- Provides --
@@ -39,13 +40,13 @@
 (define (session-proc identifier input-port output-port working-dir)
   (session-log-trace identifier "Session started.")
   (let loop ()
-    (let* ([ts (make-transaction-state
-                identifier
-                input-port
-                output-port
-                working-dir
-                (+ (current-inexact-milliseconds) 15000.0))]
-           [disposition (transaction-proc ts)])
+    (let* ([initial-ts (make-transaction-state
+                        identifier
+                        input-port
+                        output-port
+                        working-dir
+                        (+ (current-inexact-milliseconds) 15000.0))] ; todo
+           [final-ts (transaction-proc initial-ts)])
       (when #f ; todo
         (loop))))
   (session-log-trace identifier "Session terminated."))
@@ -71,6 +72,12 @@
        (loop (transaction-handle-send-response ts))]
       ['log-response
        (loop (transaction-handle-log-response ts))]
+      ['client-disconnected
+       (loop (transaction-handle-client-disconnected ts))]
+      ['transaction-timed-out
+       (loop (transaction-handle-transaction-timed-out ts))]
+      ['transaction-cancelled
+       (loop (transaction-handle-transaction-cancelled ts))]
       ['done
        (transaction-handle-done ts)])))
 
@@ -78,13 +85,25 @@
   (update-state ts 'get-request-line))
 
 (define (transaction-handle-get-request-line ts)
-  (update-state ts 'get-header))
+  (wait-for-line
+   ts
+   (λ (line)
+     (displayln line)
+     (update-state ts 'get-header))))
 
 (define (transaction-handle-get-header ts)
-  (update-state ts 'get-body))
+  (wait-for-line
+   ts
+   (λ (line)
+     (displayln line)
+     (update-state ts 'get-body))))
 
 (define (transaction-handle-get-body ts)
-  (update-state ts 'log-request))
+  (wait-for-line
+   ts
+   (λ (line)
+     (displayln line)
+     (update-state ts 'process-request))))
 
 (define (transaction-handle-log-request ts)
   (update-state ts 'process-request))
@@ -96,14 +115,23 @@
   (update-state ts 'log-response))
 
 (define (transaction-handle-log-response ts)
-  (update-state ts 'done))
+  (update-state ts 'done [result 'success]))
+
+(define (transaction-handle-client-disconnected ts)
+  (update-state ts 'done [result 'client-disconnected]))
+
+(define (transaction-handle-transaction-timed-out ts)
+  (update-state ts 'done [result 'transaction-timed-out]))
+
+(define (transaction-handle-transaction-cancelled ts)
+  (update-state ts 'done [result 'transaction-cancelled]))
 
 (define (transaction-handle-done ts)
   (session-log-trace
    (transaction-state-identifier ts)
    "Transaction completed, result = ~A"
    (transaction-state-result ts))
-  (transaction-state-result ts))
+  ts)
 
 ;; -- Private Procedures (Utility) --
 
@@ -122,6 +150,29 @@
    #f))
 
 (define-local-log session "Session" #:require-identifier #t)
+
+(define (wait-for-line ts process-line)
+  (sync
+   ;; Received data from client
+   (handle-evt
+    (read-line-evt (transaction-state-input-port ts) 'any)
+    (match-lambda
+      ;; Valid line
+      [(? string? line) (process-line line)]
+      ;; Client disconnected
+      [eof (update-state ts 'client-disconnected)]))
+   ;; Transaction timed out
+   (handle-evt
+    (alarm-evt (transaction-state-deadline ts))
+    (thunk* (update-state ts 'transaction-timed-out)))
+   ;; Received thread event
+   (handle-evt
+    (wrap-evt (thread-receive-evt) (thunk* (thread-receive)))
+    (match-lambda
+      ;; Transaction was cancelled, probably due to worker shutting down
+      ['terminate (update-state ts 'transaction-cancelled)]
+      ;; Unknown event?
+      [bad-message (raise-bad-message-error bad-message)]))))
 
 ;; -- Macros --
 
