@@ -12,6 +12,7 @@
 (require "../server/session.rkt")
 (require "../util/arguments-parser.rkt")
 (require "../util/logging.rkt")
+(require "../util/misc.rkt")
 
 ;; -- Provides --
 
@@ -21,10 +22,11 @@
   ;; Struct representing the command-line arguments to the program.
   [struct arguments ([worker-count exact-nonnegative-integer?]
                      [working-dir path-string?]
-                     [interface (or/c string? false?)]
+                     [interface (maybe/c string?)]
                      [port-number port-number?]
                      [session-timeout session-timeout?]
-                     [minimum-log-event-level log-event-level?])]
+                     [minimum-log-event-level log-event-level?]
+                     [override-server-name (maybe/c string?)])]
 
   ;; Parses and validates arguments from the specified list of strings. Raises a
   ;; user error if the arguments are not in a valid state.
@@ -38,7 +40,8 @@
                    interface
                    port-number
                    session-timeout
-                   minimum-log-event-level)
+                   minimum-log-event-level
+                   override-server-name)
   #:transparent)
 
 ;; -- Public Procedures --
@@ -51,7 +54,8 @@
               #f	; interface: default = #f (any)
               #f	; port-number: user must specify
               #f	; session-timeout: default = #f (none)
-              'trace)	; log-level: default = trace
+              'trace	; log-level: default = trace
+              #f)	; override-server-name: default = #f (none)
    ([var ("-j" "--worker-count")
          worker-count
          #:proc string->number
@@ -76,7 +80,9 @@
     [var ("-l" "--log-level")
          minimum-log-event-level
          #:proc string->symbol
-         #:guard log-event-level?])))
+         #:guard log-event-level?]
+    [var ("-s" "--server-name")
+         override-server-name])))
 
 ;; -- Tests --
 
@@ -172,4 +178,14 @@
     ;; Missing argument
     (check-exn
      exn:fail:user?
-     (thunk (parse-arguments '("-w" "." "-p" "8080" "-l"))))))
+     (thunk (parse-arguments '("-w" "." "-p" "8080" "-l")))))
+
+  (test-case "Override Server Name"
+    (let ([args (parse-arguments '("-w" "." "-p" "8080"))])
+      (check-equal? (arguments-override-server-name args) #f))
+    (let ([args (parse-arguments '("-w" "." "-p" "8080" "-s" "override-server-name"))])
+      (check-equal? (arguments-override-server-name args) "override-server-name"))
+    ;; Missing argument
+    (check-exn
+     exn:fail:user?
+     (thunk (parse-arguments '("-w" "." "-p" "8080" "-s"))))))

@@ -12,6 +12,7 @@
 (require racket/hash)
 (require (for-syntax syntax/parse))
 (require "../http/http-response.rkt")
+(require "../main/configuration.rkt")
 (require "../util/misc.rkt")
 
 ;; -- Provides --
@@ -70,8 +71,9 @@
 
 ;; Generates the default headers which should be included with every response.
 (define (default-headers)
-  ;; TODO
-  (hash))
+  (hash
+   ;; Server header (RFC 2616 section 14.38)
+   "Server" (server-name)))
 
 ;; -- Response Library --
 

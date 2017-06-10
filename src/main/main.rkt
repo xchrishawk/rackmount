@@ -13,6 +13,8 @@
 
 (require racket/generator)
 (require "../main/arguments.rkt")
+(require "../main/configuration.rkt")
+(require "../main/version.rkt")
 (require "../server/listener.rkt")
 (require "../tasks/manager.rkt")
 (require "../tasks/session-task.rkt")
@@ -35,19 +37,29 @@
 ;; -- Public Procedures --
 
 (define (main args-list)
+  (main-log-info
+   "~A starting with arguments: ~A"
+   (rackmount-version)
+   (string-join args-list))
   (let* ([args (parse-arguments args-list)])
-    (main-log-info "Starting with arguments: ~A" (string-join args-list))
-    (let* (;; Start manager
-           [manager-config (make-manager-config args)]
-           [manager (manager manager-config)]
-           ;; Start listener
-           [listener-config (make-listener-config args manager)]
-           [listener (listener listener-config)])
-      (main-log-debug "Startup complete. Waiting for break...")
-      (wait-for-break)
-      (main-log-info "Break received, terminating application...")
-      (listener-terminate listener)
-      (manager-terminate manager))))
+    (parameterize (;; Set minimum logging level
+                   [minimum-log-event-level
+                    (arguments-minimum-log-event-level args)]
+                   ;; Set reported server name
+                   [server-name
+                    (let ([override-server-name (arguments-override-server-name args)])
+                      (or override-server-name (rackmount-version)))])
+      (let* (;; Start manager
+             [manager-config (make-manager-config args)]
+             [manager (manager manager-config)]
+             ;; Start listener
+             [listener-config (make-listener-config args manager)]
+             [listener (listener listener-config)])
+        (main-log-debug "Startup complete. Waiting for break...")
+        (wait-for-break)
+        (main-log-info "Break received, terminating application...")
+        (listener-terminate listener)
+        (manager-terminate manager)))))
 
 ;; -- Private Procedures --
 

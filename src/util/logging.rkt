@@ -11,6 +11,7 @@
 
 (require (for-syntax syntax/parse))
 (require (for-syntax "../util/misc.rkt"))
+(require "../main/configuration.rkt")
 
 ;; -- Provides --
 
@@ -38,10 +39,7 @@
   [log-event-level? (-> any/c boolean?)]
 
   ;; Returns #t if the specified log event level is enabled.
-  [log-event-level-enabled? (-> log-event-level? boolean?)]
-
-  ;; Parameter defining the current minimum log level.
-  [minimum-log-event-level (parameter/c log-event-level?)]))
+  [log-event-level-enabled? (-> log-event-level? boolean?)]))
 
 ;; -- Structs --
 
@@ -53,9 +51,6 @@
   #:transparent)
 
 ;; -- Objects --
-
-(define minimum-log-event-level
-  (make-parameter 'trace))
 
 ;; Lookup table for log levels.
 (define log-event-levels (hash 'critical (cons 0 "Critical")

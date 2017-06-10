@@ -10,6 +10,7 @@
 
 ;; -- Requires --
 
+(require "../main/configuration.rkt")
 (require "../util/exceptions.rkt")
 (require "../util/logging.rkt")
 (require "../util/misc.rkt")

@@ -55,7 +55,7 @@
   (or/c false? (and/c real? positive?)))
 
 (define (session-proc identifier input-port output-port working-dir timeout)
-  (session-log-trace identifier "Session started.")
+  (session-log-info identifier "Session started.")
   (let ([deadline
          (ifmap ([timeout timeout])
            (+ (current-inexact-milliseconds) timeout))])
@@ -72,7 +72,7 @@
         (when (should-continue-session-with-transaction-result
                (transaction-state-result final-ts))
           (loop)))))
-  (session-log-trace identifier "Session terminated."))
+  (session-log-info identifier "Session terminated."))
 
 ;; -- Private Procedures (Transaction State Machine) --
 

@@ -10,6 +10,7 @@
 
 ;; -- Requires --
 
+(require "../main/configuration.rkt")
 (require "../tasks/task.rkt")
 (require "../tasks/task-serialization.rkt")
 (require "../util/exceptions.rkt")
@@ -85,6 +86,7 @@
                        ;; Set place configuration
                        (parameterize*
                            ([minimum-log-event-level (place-channel-get bootstrap-pch)]
+                            [server-name (place-channel-get bootstrap-pch)]
                             [current-worker-pch-to-manager (place-channel-get bootstrap-pch)]
                             [current-worker-pch-from-manager (place-channel-get bootstrap-pch)]
                             [current-worker-identifier (place-channel-get bootstrap-pch)])
@@ -94,6 +96,7 @@
                          (worker-main)))])
     ;; Configure the place
     (place-channel-put pl (minimum-log-event-level))
+    (place-channel-put pl (server-name))
     (place-channel-put pl their-pch-to-manager)
     (place-channel-put pl their-pch-from-manager)
     (place-channel-put pl identifier)
