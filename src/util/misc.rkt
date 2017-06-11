@@ -39,6 +39,9 @@
   ;; Equivalent to (or/c arg false?).
   [maybe/c (-> contract? contract?)]
 
+  ;; Returns a value if it matches the specified contract, and #f otherwise.
+  [if-is (-> contract? any/c any/c)]
+
   ;; Returns an empty string.
   [string-empty (-> string?)]
 
@@ -78,6 +81,11 @@
 
 (define (maybe/c ctc)
   (or/c ctc false?))
+
+(define (if-is ctc value)
+  (if (ctc value)
+      value
+      #f))
 
 (define string-empty
   (const ""))
