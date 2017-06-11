@@ -86,17 +86,19 @@
     (set-header "Content-Length" (entity-content-length entity))
     result))
 
+;; Calculates the total content length for the specified entity.
 (define (entity-content-length entity)
   (match entity
     ;; Entity is an input port
-    [input-port?
-     (let ([current-position (file-position entity)])
-       (file-position entity eof)
+    [(? input-port? input-port)
+     (let ([current-position (file-position input-port)])
+       (file-position input-port eof)
        (begin0
-           (file-position entity)
-         (file-position entity current-position)))]
+           (file-position input-port)
+         (file-position input-port current-position)))]
     ;; Entity is a byte string
-    [bytes? (bytes-length entity)]
+    [(? bytes? bytes)
+     (bytes-length bytes)]
     ;; No entity
     [else 0]))
 
