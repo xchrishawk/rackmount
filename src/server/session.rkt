@@ -50,31 +50,36 @@
 
 (define (session-proc identifier input-port output-port)
   (session-log-info identifier "Session started.")
-  (with-handlers (;; This is a last-ditch effort to recover gracefully and close
-                  ;; the connection. This should only be hit if the initial error
-                  ;; handler in transaction-proc *also* errors out. The client will
-                  ;; not receive a 500 response, but the connection *should* be
-                  ;; terminated cleanly. Hopefully.
-                  [exn:fail?
-                   (λ (ex)
-                     (session-log-critical
-                      identifier
-                      "Secondary internal error occurred:\n\n~A\n\nUnable to continue session."
-                      ex))])
-    (let ([deadline (ifmap ([timeout (config-session-timeout)])
-                      (+ (current-inexact-milliseconds) timeout))])
-      (let loop ()
-        ;; Run the state machine and get the final result
-        (let* ([initial-ts (make-transaction-state
-                            identifier
-                            input-port
-                            output-port
-                            deadline)]
-               [final-ts (transaction-proc initial-ts)])
-          ;; Keep looping if appropriate
-          (when (should-continue-session-with-transaction-result
-                 (transaction-state-result final-ts))
-            (loop))))))
+  ;; Wrap the session in a new custodian
+  (let ([session-custodian (make-custodian)])
+    (parameterize ([current-custodian session-custodian])
+      (with-handlers (;; This is a last-ditch effort to recover gracefully and close
+                      ;; the connection. This should only be hit if the initial error
+                      ;; handler in transaction-proc *also* errors out. The client will
+                      ;; not receive a 500 response, but the connection *should* be
+                      ;; terminated cleanly. Hopefully.
+                      [exn:fail?
+                       (λ (ex)
+                         (session-log-critical
+                          identifier
+                          "Secondary internal error occurred:\n\n~A\n\nUnable to continue session."
+                          ex))])
+        (let ([deadline (ifmap ([timeout (config-session-timeout)])
+                          (+ (current-inexact-milliseconds) timeout))])
+          (let loop ()
+            ;; Run the state machine and get the final result
+            (let* ([initial-ts (make-transaction-state
+                                identifier
+                                input-port
+                                output-port
+                                deadline)]
+                   [final-ts (transaction-proc initial-ts)])
+              ;; Keep looping if appropriate
+              (when (should-continue-session-with-transaction-result
+                     (transaction-state-result final-ts))
+                (loop))))))
+      ;; Release all resources for this session
+      (custodian-shutdown-all session-custodian)))
   (session-log-info identifier "Session terminated."))
 
 ;; -- Private Procedures (Transaction State Machine) --
