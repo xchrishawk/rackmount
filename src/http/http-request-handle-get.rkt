@@ -12,6 +12,7 @@
 (require "../http/http-request.rkt")
 (require "../http/http-response.rkt")
 (require "../http/http-response-lib.rkt")
+(require "../http/uri.rkt")
 (require "../main/configuration.rkt")
 (require "../util/misc.rkt")
 
@@ -26,8 +27,8 @@
 ;; -- Public Procedures --
 
 (define (http-request-handle-get request)
-  (let ([local-path (local-path-for-request-uri (http-request-uri request))])
-    (displayln local-path)
+  (let* ([uri (make-uri (http-request-uri request))]
+         [local-path (local-path-for-uri uri)])
     (cond
       ;; Path is a valid file
       [(file-exists? local-path)
@@ -45,10 +46,12 @@
 
 ;; -- Private Procedures --
 
-(define (local-path-for-request-uri request-uri)
-  (let* ([local-relative-uri (string-trim request-uri "/" #:right? #f #:repeat? #t)]
-         [local-absolute-uri
-          (if (string-empty? local-relative-uri)
-              (config-working-dir)
-              (build-path (config-working-dir) local-relative-uri))])
-    local-absolute-uri))
+(define (local-path-for-uri uri)
+  (let* ([uri-path (uri-path uri)]
+         ;; build-path doesn't like the leading slash
+         [trimmed-uri-path (string-trim uri-path "/" #:repeat? #t)])
+    (apply
+     build-path
+     (filter
+      (λ (str) (not (string-empty? str)))
+      (list (config-working-dir) trimmed-uri-path)))))
