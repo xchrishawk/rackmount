@@ -183,9 +183,14 @@
    [result 'internal-error]))
 
 (define (transaction-handle-send-response ts)
-  (let ([response-bytes (http-response->bytes (transaction-state-response ts))])
-    (write-bytes response-bytes (transaction-state-output-port ts))
-    (flush-output (transaction-state-output-port ts)))
+  (let ([response (transaction-state-response ts)]
+        [output-port (transaction-state-output-port ts)])
+    (let ([head-input-port (http-response-head->input-port response)])
+      (send-bytes head-input-port output-port))
+    (let ([entity-input-port (http-response-entity->input-port response)])
+      (when entity-input-port
+        (send-bytes entity-input-port output-port)))
+    (flush-output output-port))
   (log-response ts)
   (update-state ts 'done))
 
@@ -308,6 +313,17 @@
       ['terminate (update-state ts 'transaction-cancelled)]
       ;; Unknown event?
       [bad-message (raise-bad-message-error bad-message)]))))
+
+;; Sends a data stream to the client.
+(define (send-bytes input-port output-port)
+  (let loop ()
+    (match (read-bytes 32768 input-port)
+      ;; Got a block of data
+      [(? bytes? buffer)
+       (write-bytes buffer output-port)
+       (loop)]
+      ;; End of buffer - stop looping
+      [eof (void)])))
 
 ;; Local logging procedures.
 (define-local-log session "Session" #:require-identifier #t)

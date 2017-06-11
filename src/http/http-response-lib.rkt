@@ -21,7 +21,7 @@
 (define response-contract
   (->* ()
        (#:extra-headers (maybe/c (hash/c string? any/c))
-        #:entity (maybe/c bytes?)
+        #:entity (maybe/c (or/c bytes? input-port?))
         #:http-major-version exact-nonnegative-integer?
         #:http-minor-version exact-nonnegative-integer?)
        http-response?))
@@ -83,8 +83,22 @@
     ;; Server header (RFC 2616 section 14.38)
     (set-header "Server" (config-server-name))
     ;; Content-Length header (RFC 2616 section 14.13)
-    (set-header "Content-Length" (if entity (bytes-length entity) 0))
+    (set-header "Content-Length" (entity-content-length entity))
     result))
+
+(define (entity-content-length entity)
+  (match entity
+    ;; Entity is an input port
+    [input-port?
+     (let ([current-position (file-position entity)])
+       (file-position entity eof)
+       (begin0
+           (file-position entity)
+         (file-position entity current-position)))]
+    ;; Entity is a byte string
+    [bytes? (bytes-length entity)]
+    ;; No entity
+    [else 0]))
 
 ;; -- Response Library --
 

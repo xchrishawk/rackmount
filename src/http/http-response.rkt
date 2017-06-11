@@ -22,7 +22,7 @@
                          [major-version exact-nonnegative-integer?]
                          [minor-version exact-nonnegative-integer?]
                          [headers (hash/c string? any/c)]
-                         [entity (maybe/c bytes?)])]
+                         [entity (maybe/c (or/c bytes? input-port?))])]
 
   ;; Predicate returning #t if the argument is a valid HTTP response code.
   [http-status-code? (-> any/c boolean?)]
@@ -31,8 +31,12 @@
   ;; matching standard reason string was found.
   [http-response-standard-reason (-> http-status-code? (maybe/c string?))]
 
-  ;; Serializes an HTTP response to a byte string.
-  [http-response->bytes (-> http-response? bytes?)]))
+  ;; Serializes the head of an HTTP response to a byte stream input port.
+  [http-response-head->input-port (-> http-response? input-port?)]
+
+  ;; Serializes the entity of an HTTP response to a byte stream input port, or #f
+  ;; if there is no entity body.
+  [http-response-entity->input-port (-> http-response? (maybe/c input-port?))]))
 
 ;; -- Structs --
 
@@ -98,13 +102,13 @@
 (define (http-response-standard-reason status-code)
   (hash-ref reason-lookup status-code #f))
 
-(define (http-response->bytes response)
-  (let ([output (open-output-bytes)])
-    (define (write-line line)
-      (write-bytes (string->bytes/utf-8 line) output)
-      (write-bytes #"\r\n" output))
+(define (http-response-head->input-port response)
+  (let-values ([(pipe-input pipe-output) (make-pipe)])
+    (define (append-line line)
+      (write-bytes (string->bytes/utf-8 line) pipe-output)
+      (write-bytes #"\r\n" pipe-output))
     ;; Status line (RFC 2616 section 6.1)
-    (write-line
+    (append-line
      (format
       "HTTP/~A.~A ~A ~A"
       (http-response-major-version response)
@@ -113,16 +117,26 @@
       (http-response-reason response)))
     ;; Headers (RFC 2612 section 4.5, 6.2, 7.1)
     (for ([(header-name header-value) (in-hash (http-response-headers response))])
-      (write-line
-       (format
-        "~A: ~A"
-        header-name
-        header-value)))
-    ;; Blank line to terminate headers
-    (write-line (string-empty))
-    ;; Entity (RFC 2612 section 7.2)
-    (let ([entity (http-response-entity response)])
-      (when entity
-        (write-bytes entity output)))
-    ;; Return the result
-    (get-output-bytes output)))
+      (append-line (format "~A: ~A" header-name header-value)))
+    ;; Empty line to terminate headers (RFC 2612 section 4.1)
+    (append-line (string-empty))
+    ;; Finally, return the resulting input port
+    (close-output-port pipe-output)
+    pipe-input))
+
+(define (http-response-entity->input-port response)
+  (match (http-response-entity response)
+    ;; Entity is already an input port
+    [(? input-port? entity-input-port) entity-input-port]
+    ;; Entity is a byte string
+    [(? bytes? entity-bytes) (bytes->input-port entity-bytes)]
+    ;; Entity is not present
+    [else #f]))
+
+;; -- Private Procedures --
+
+(define (bytes->input-port bytes)
+  (let-values ([(pipe-input pipe-output) (make-pipe)])
+    (write-bytes bytes pipe-output)
+    (close-output-port pipe-output)
+    pipe-input))

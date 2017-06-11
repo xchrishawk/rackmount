@@ -32,11 +32,8 @@
     (cond
       ;; Path is a valid file
       [(file-exists? local-path)
-       ;; TODO - obviously needs bettered
-       (let ([file-port (open-input-file local-path)])
-         (begin0
-             (http-response-ok #:entity (port->bytes file-port))
-           (close-input-port file-port)))]
+       (let ([input-port (open-input-file local-path)])
+         (http-response-ok #:entity input-port))]
       ;; Path is a valid directory - TODO
       [(directory-exists? local-path)
        (http-response-not-found)]
