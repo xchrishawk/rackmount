@@ -35,8 +35,14 @@
   ;; Generates a 400 Bad Request response.
   [http-response-bad-request response-contract]
 
+  ;; Generates a 404 Not Found response.
+  [http-response-not-found response-contract]
+
   ;; Generates a 500 Internal Server Error response.
-  [http-response-internal-server-error response-contract]))
+  [http-response-internal-server-error response-contract]
+
+  ;; Generates a 501 Not Implemented response.
+  [http-response-not-implemented response-contract]))
 
 ;; -- Constants --
 
@@ -66,19 +72,18 @@
        (if extra-headers
            (hash-union default-headers extra-headers)
            default-headers))
-     ;; Entity bodye
+     ;; Entity body
      entity)))
 
 ;; Generates the default headers which should be included with every response.
 (define (default-headers entity)
   (let ([result (hash)])
-    (define (set header-name header-value)
+    (define (set-header header-name header-value)
       (set! result (hash-set result header-name header-value)))
     ;; Server header (RFC 2616 section 14.38)
-    (set "Server" (config-server-name))
+    (set-header "Server" (config-server-name))
     ;; Content-Length header (RFC 2616 section 14.13)
-    (when entity
-      (set "Content-Length" (bytes-length entity)))
+    (set-header "Content-Length" (if entity (bytes-length entity) 0))
     result))
 
 ;; -- Response Library --
@@ -89,5 +94,11 @@
 (define http-response-bad-request
   (response 400))
 
+(define http-response-not-found
+  (response 404))
+
 (define http-response-internal-server-error
   (response 500))
+
+(define http-response-not-implemented
+  (response 501))

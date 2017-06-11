@@ -13,6 +13,7 @@
 
 (require (for-syntax syntax/parse))
 (require "../http/http-request.rkt")
+(require "../http/http-request-handle.rkt")
 (require "../http/http-response.rkt")
 (require "../http/http-response-lib.rkt")
 (require "../main/configuration.rkt")
@@ -151,11 +152,16 @@
 
 (define (transaction-handle-valid-request ts)
   (log-valid-request ts)
-  (update-state
-   ts
-   'send-response
-   [response (http-response-ok #:entity #"hi there")]
-   [result 'success]))
+  (let ([response (http-request-handle (transaction-state-request ts))])
+    (update-state
+     ts
+     'send-response
+     [response response]
+     ;; Note - "Success" does not imply that the processing was successful or that
+     ;; we performed the action requested by the client. In this context it just
+     ;; means that we were able to parse the request and generate a response without
+     ;; anything unusual happening like an internal error, timeout, disconnect, etc.
+     [result 'success])))
 
 (define (transaction-handle-invalid-request ts)
   (log-invalid-request ts)
