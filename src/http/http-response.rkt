@@ -17,6 +17,8 @@
  (contract-out
 
   ;; Struct representing an HTTP response.
+  ;; Note that the entity object may be either a byte string or an input port for
+  ;; reading from the file system.
   [struct http-response ([status-code http-status-code?]
                          [reason string?]
                          [major-version exact-nonnegative-integer?]
@@ -31,12 +33,8 @@
   ;; matching standard reason string was found.
   [http-response-standard-reason (-> http-status-code? (maybe/c string?))]
 
-  ;; Serializes the head of an HTTP response to a byte stream input port.
-  [http-response-head->input-port (-> http-response? input-port?)]
-
-  ;; Serializes the entity of an HTTP response to a byte stream input port, or #f
-  ;; if there is no entity body.
-  [http-response-entity->input-port (-> http-response? (maybe/c input-port?))]))
+  ;; Serializes the head of an HTTP response to a byte string.
+  [http-response-head (-> http-response? bytes?)]))
 
 ;; -- Structs --
 
@@ -102,11 +100,11 @@
 (define (http-response-standard-reason status-code)
   (hash-ref reason-lookup status-code #f))
 
-(define (http-response-head->input-port response)
-  (let-values ([(pipe-input pipe-output) (make-pipe)])
+(define (http-response-head response)
+  (let ([head (open-output-bytes)])
     (define (append-line line)
-      (write-bytes (string->bytes/utf-8 line) pipe-output)
-      (write-bytes #"\r\n" pipe-output))
+      (write-bytes (string->bytes/utf-8 line) head)
+      (write-bytes #"\r\n" head))
     ;; Status line (RFC 2616 section 6.1)
     (append-line
      (format
@@ -120,23 +118,5 @@
       (append-line (format "~A: ~A" header-name header-value)))
     ;; Empty line to terminate headers (RFC 2612 section 4.1)
     (append-line (string-empty))
-    ;; Finally, return the resulting input port
-    (close-output-port pipe-output)
-    pipe-input))
-
-(define (http-response-entity->input-port response)
-  (match (http-response-entity response)
-    ;; Entity is already an input port
-    [(? input-port? entity-input-port) entity-input-port]
-    ;; Entity is a byte string
-    [(? bytes? entity-bytes) (bytes->input-port entity-bytes)]
-    ;; Entity is not present
-    [else #f]))
-
-;; -- Private Procedures --
-
-(define (bytes->input-port bytes)
-  (let-values ([(pipe-input pipe-output) (make-pipe)])
-    (write-bytes bytes pipe-output)
-    (close-output-port pipe-output)
-    pipe-input))
+    ;; Return the result
+    (get-output-bytes head)))

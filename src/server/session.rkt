@@ -183,16 +183,16 @@
    [result 'internal-error]))
 
 (define (transaction-handle-send-response ts)
-  (let ([response (transaction-state-response ts)]
-        [output-port (transaction-state-output-port ts)])
-    (let ([head-input-port (http-response-head->input-port response)])
-      (send-bytes head-input-port output-port))
-    (let ([entity-input-port (http-response-entity->input-port response)])
-      (when entity-input-port
-        (send-bytes entity-input-port output-port)))
-    (flush-output output-port))
-  (log-response ts)
-  (update-state ts 'done))
+  (let* ([response (transaction-state-response ts)]
+         [output-port (transaction-state-output-port ts)]
+         [head (http-response-head response)]
+         [entity (http-response-entity response)])
+    (send-data ts head)
+    (when entity
+      (send-data ts entity))
+    (flush-output output-port)
+    (log-response ts)
+    (update-state ts 'done)))
 
 (define (transaction-handle-client-disconnected ts)
   (update-state ts 'done [result 'client-disconnected]))
@@ -227,6 +227,15 @@
    #f
    #f
    #f))
+
+;; Sends data to the client. The data may be either a byte string or an input port.
+(define (send-data ts data)
+  (let ([output-port (transaction-state-output-port ts)])
+    (match data
+      [(? input-port? input-port)
+       (copy-port input-port output-port)]
+      [(? bytes? bytes)
+       (write-bytes bytes output-port)])))
 
 ;; Logs a valid request.
 (define (log-valid-request ts)
@@ -313,17 +322,6 @@
       ['terminate (update-state ts 'transaction-cancelled)]
       ;; Unknown event?
       [bad-message (raise-bad-message-error bad-message)]))))
-
-;; Sends a data stream to the client.
-(define (send-bytes input-port output-port)
-  (let loop ()
-    (match (read-bytes 32768 input-port)
-      ;; Got a block of data
-      [(? bytes? buffer)
-       (write-bytes buffer output-port)
-       (loop)]
-      ;; End of buffer - stop looping
-      [eof (void)])))
 
 ;; Local logging procedures.
 (define-local-log session "Session" #:require-identifier #t)
